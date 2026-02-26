@@ -1,0 +1,395 @@
+*, *::before, *::after {
+  font-family: 'Inter', system-ui, sans-serif;
+  box-sizing: border-box;
+}
+
+/* ── Sound toggle ─────────────────────────────────────────── */
+
+.refresh-btn {
+  position: absolute;
+  bottom: 18px;
+  right: 68px;
+  background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(255,255,255,0);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 1.3rem;
+  width: 42px;
+  height: 42px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  z-index: 30;
+}
+.refresh-btn:hover { background: rgba(0,0,0,0.7); }
+
+
+
+.sound-btn {
+  position: absolute;
+  bottom: 18px;
+  right: 18px;
+  background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(255,255,255,0);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 1.3rem;
+  width: 42px;
+  height: 42px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  z-index: 30;
+}
+.sound-btn:hover { background: rgba(0,0,0,0.7); }
+
+/* ── Layout ───────────────────────────────────────────────── */
+.game-wrap {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Preview camera debug ─────────────────────────────────── */
+/* ── Start screen ─────────────────────────────────────────── */
+.start-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: #fff;
+  user-select: none;
+}
+
+.start-vignette {
+  display: flex;
+  flex-direction: column;
+  padding: 36px 28px 36px;
+  border-radius: 20px;
+  background: rgba(20, 20, 20, 0.72);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  color: #fff;
+}
+
+.start-desc {
+  font-size: 16px;
+  color: rgba(255,255,255,0.8);
+  margin: -8px 0 0;
+  line-height: 1.45;
+}
+
+.start-screen h1 {
+  font-family: 'Climate Crisis', sans-serif;
+  font-size: 36px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  margin: 0 0 20px;
+}
+
+.key-guide {
+  display: flex;
+  flex-direction: column;
+  margin: 24px 0 32px;
+}
+
+.key-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 0;
+  font-size: 0.97rem;
+  font-weight: 400;
+  color: rgba(255,255,255,0.55);
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.key-row:last-child { border-bottom: none; }
+
+.key-group {
+  display: flex;
+  gap: 6px;
+}
+
+kbd {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #fff;
+}
+
+kbd img {
+  pointer-events: none;
+  user-select: none;
+}
+
+kbd.key-qe {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 300;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.start-btn {
+  width: 100%;
+  background: #f09030;
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: none;
+  border-radius: 50px;
+  padding: 15px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s, box-shadow 90ms;
+}
+
+.start-btn:hover {
+  background: #f5a040;
+}
+
+
+/* ── Top HUD card ────────────────────────────────────────── */
+.top-hud {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 14px 24px;
+  border-radius: 20px;
+  background: rgba(30, 30, 28, 0.72);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* Speed circle */
+.top-hud-speed {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+}
+
+.top-hud-speed-ring {
+  width: 72px;
+  height: 72px;
+  transform: rotate(90deg);
+  display: block;
+}
+
+.speed-ring-bg {
+  fill: none;
+  stroke: rgba(255,255,255,0.1);
+}
+
+.speed-ring-fill {
+  fill: none;
+  stroke: #00e5ff;
+  stroke-linecap: round;
+  transition: none;
+}
+
+.top-hud-speed-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.top-hud-speed-num {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+}
+
+.top-hud-speed-unit {
+  font-size: 0.58rem;
+  color: rgba(255,255,255,0.5);
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+/* Divider */
+.top-hud-divider {
+  width: 1px;
+  height: 70px;
+  background: rgba(255,255,255,0.12);
+  flex-shrink: 0;
+}
+
+/* Mission text */
+.top-hud-mission {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.top-hud-exit {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.2px;
+}
+
+.top-hud-lane {
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.5);
+  font-weight: 400;
+  margin-top: 3px;
+}
+
+.top-hud-ind {
+  font-size: 0.85rem;
+  /* color: rgba(240,144,49,0.7); */
+  color: rgba(255,255,255,0.5);
+  font-weight: 500;
+  margin-top: 3px;
+}
+
+/* Indicator arrows inside the card */
+.top-hud-indicators {
+  display: flex;
+  gap: 8px;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.ind-arrow {
+  font-size: 1.6rem;
+  color: rgba(255, 255, 255, 0.12);
+  line-height: 1;
+}
+
+.ind-left { transform: scaleX(-1); }
+
+.ind-arrow.on {
+  color: #f0a000;
+  text-shadow: 0 0 14px rgba(240, 160, 0, 0.9);
+  animation: blink 0.667s step-start infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* ── 4. Warning banner (center) ───────────────────────────── */
+.grace-warning {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  height: 48px;
+  padding: 10px 20px 10px 18px;
+  border-radius: 9999px;
+  background: rgba(200, 130, 0, 0.88);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  animation: graceFlash 0.5s ease-in-out infinite alternate;
+  z-index: 10;
+}
+
+.grace-text {
+  font-size: 20px;
+  font-weight: 400;
+  letter-spacing: -0.3px;
+  text-transform: none;
+}
+
+.grace-timer {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  color: #FFE28B;
+}
+
+@keyframes graceFlash {
+  from { box-shadow: 0 0 0   rgba(255, 180, 0, 0.5); }
+  to   { box-shadow: 0 0 28px rgba(255, 180, 0, 0.9); }
+}
+
+/* ── 5. Result overlays (fail / complete) ────────────────── */
+.result-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 20;
+}
+
+.result-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 28px 24px;
+  border-radius: 20px;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  text-align: center;
+  color: #fff;
+  gap: 12px;
+}
+
+.result-fail { background: rgba(42, 8, 8, 0.92); }
+.result-win  { background: rgba(8, 42, 18, 0.92); }
+
+.result-title {
+  font-family: 'Climate Crisis', sans-serif;
+  font-size: 36px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  margin: 0 0 4px;
+}
+
+.result-fail .result-title { color: #ff5555; text-shadow: 0 0 30px rgba(255,60,60,0.5); }
+.result-win  .result-title { color: #00e650; text-shadow: 0 0 30px rgba(0,230,80,0.5);  }
+
+.result-msg {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.65);
+  margin-bottom: 16px;
+}
+
+/* ── Steer indicator ─────────────────────────────────────── */
+
+
