@@ -2,6 +2,49 @@ import { useEffect, useRef, useState } from 'react';
 import { RoundaboutGame } from './engine';
 import './Game.css';
 
+function DraggableBtn({ className, onClick, children }) {
+  const [pos, setPos]       = useState(null);
+  const [coord, setCoord]   = useState('');
+  const drag    = useRef(null);
+  const moved   = useRef(false);
+
+  const onPointerDown = e => {
+    moved.current = false;
+    const rect = e.currentTarget.getBoundingClientRect();
+    drag.current = { cx: e.clientX, cy: e.clientY, bx: pos?.x ?? rect.left, by: pos?.y ?? rect.top };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = e => {
+    const d = drag.current;
+    if (!d) return;
+    const dx = e.clientX - d.cx, dy = e.clientY - d.cy;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved.current = true;
+    if (!moved.current) return;
+    const nx = d.bx + dx, ny = d.by + dy;
+    setPos({ x: nx, y: ny });
+    setCoord(`${Math.round(nx)}, ${Math.round(ny)}`);
+  };
+
+  const onPointerUp  = () => { drag.current = null; };
+
+  const handleClick  = e => {
+    if (moved.current) { moved.current = false; return; }
+    onClick?.(e);
+  };
+
+  const style = pos ? { position: 'fixed', left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' } : {};
+
+  return (
+    <button className={className} style={style}
+      onPointerDown={onPointerDown} onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp} onClick={handleClick}
+    >
+      {children}
+      {pos && <span className="drag-coord">{coord || `${Math.round(pos.x)}, ${Math.round(pos.y)}`}</span>}
+    </button>
+  );
+}
 
 const ArrowKey = ({ deg = 0 }) => (
   <kbd>
@@ -22,7 +65,7 @@ const PHASE_LABELS = {
 const ORDINALS = { 1: '1st', 2: '2nd', 3: '3rd' };
 const IND_HINTS = {
   1: 'Indicate Left on Approach',
-  2: 'No Indicator on Approach · Signal Left After 1st Exit',
+  2: 'No Indicator on Approach. Signal Left After 1st Exit.',
   3: 'Indicate Right on Approach',
 };
 const GRACE_MSG = {
@@ -51,16 +94,30 @@ export default function Game() {
   const [muted,          setMuted]          = useState(false);
   const [btnHovered,     setBtnHovered]     = useState(false);
   const [retryHovered,   setRetryHovered]   = useState(false);
+  const [showIndHint,    setShowIndHint]    = useState(false);
+  const indHintTimer = useRef(null);
   const glowStyle = hovered => ({
     boxShadow: hovered ? '0 0 16px 0px rgba(240,144,48,0.13), 0 0 78px 12px rgba(240,144,48,0.25)' : 'none',
   });
-  const speedCfg = { size: 80, strokeWidth: 7, color: '#00e5ff', bgOpacity: 0.1, numSize: 1.35 };
+  const speedCfg = { strokeWidth: 7, color: '#00e5ff', bgOpacity: 0.1 };
+  const haptic = pattern => { if (window.innerWidth < 600) navigator.vibrate?.(pattern); };
 
   useEffect(() => {
     const engine = new RoundaboutGame(canvasRef.current, setHud);
     engineRef.current = engine;
     return () => engine.destroy();
   }, []);
+
+  useEffect(() => {
+    if (!hud.targetExitNum) return;
+    setShowIndHint(true);
+    clearTimeout(indHintTimer.current);
+    indHintTimer.current = setTimeout(() => setShowIndHint(false), 6000);
+  }, [hud.targetExitNum]);
+
+  useEffect(() => { if (hud.graceActive)   haptic([30, 20, 30]); },       [hud.graceActive]);
+  useEffect(() => { if (hud.failed)        haptic([60, 40, 100]); },      [hud.failed]);
+  useEffect(() => { if (hud.showComplete)  haptic([40, 20, 40, 20, 80]); }, [hud.showComplete]);
 
   return (
     <div className="game-wrap">
@@ -92,7 +149,7 @@ export default function Game() {
             </div>
             <button
               className="start-btn"
-              onClick={() => { setStarted(true); engineRef.current?.startGame(); }}
+              onClick={() => { haptic(25); setStarted(true); engineRef.current?.startGame(); }}
               onMouseEnter={() => setBtnHovered(true)}
               onMouseLeave={() => setBtnHovered(false)}
               style={glowStyle(btnHovered)}
@@ -109,14 +166,14 @@ export default function Game() {
         <>
           {/* Top HUD card — speed + mission info */}
           <div className="top-hud">
-            <div className="top-hud-speed" style={{ width: speedCfg.size, height: speedCfg.size }}>
-              <svg className="top-hud-speed-ring" viewBox="0 0 80 80" style={{ width: speedCfg.size, height: speedCfg.size }}>
+            <div className="top-hud-speed">
+              <svg className="top-hud-speed-ring" viewBox="4 4 72 72">
                 <circle cx="40" cy="40" r="30" className="speed-ring-bg" strokeWidth={speedCfg.strokeWidth} style={{ stroke: `rgba(255,255,255,${speedCfg.bgOpacity})` }} />
                 <circle cx="40" cy="40" r="30" className="speed-ring-fill" strokeWidth={speedCfg.strokeWidth} style={{ stroke: speedCfg.color }}
                   strokeDasharray={`${hud.speedRatio * 188.5} 188.5`} />
               </svg>
               <div className="top-hud-speed-text">
-                <span className="top-hud-speed-num" style={{ fontSize: `${speedCfg.numSize}rem` }}>{hud.speed}</span>
+                <span className="top-hud-speed-num">{hud.speed}</span>
                 <span className="top-hud-speed-unit">Km/hr</span>
               </div>
             </div>
@@ -132,16 +189,20 @@ export default function Game() {
                   ? 'Use Either Lane'
                   : `Use ${hud.requiredLane === 'outer' ? 'Outer' : 'Inner'} Lane On Approach`}
               </div>
-              <div className="top-hud-ind">{IND_HINTS[hud.targetExitNum]}</div>
             </div>
-            
+
             <div className="top-hud-divider" />
-            
+
             <div className="top-hud-indicators">
               <div className={`ind-arrow ind-left${hud.leftIndicator ? ' on' : ''}`}>▶</div>
               <div className={`ind-arrow ind-right${hud.rightIndicator ? ' on' : ''}`}>▶</div>
             </div>
           </div>
+
+          {/* Indicator hint — appears below banner for 6s on each new mission */}
+          {showIndHint && (
+            <div className="ind-hint">{IND_HINTS[hud.targetExitNum]}</div>
+          )}
 
           {/* Warning banner */}
           {(hud.graceActive && !hud.failed) && (
@@ -185,17 +246,53 @@ export default function Game() {
 
 
           {/* Refresh button */}
-          <button className="refresh-btn" onClick={() => window.location.reload()}>
+          <DraggableBtn className="refresh-btn" onClick={() => window.location.reload()}>
             <img src="/refresh.svg" alt="Refresh" width={20} height={20} />
-          </button>
+          </DraggableBtn>
 
           {/* Sound toggle */}
-          <button
+          <DraggableBtn
             className="sound-btn"
             onClick={() => setMuted(engineRef.current?.toggleMute() ?? false)}
           >
             <img src={muted ? '/soundOFF.svg' : '/soundON.svg'} alt={muted ? 'Unmute' : 'Mute'} width={20} height={20} />
-          </button>
+          </DraggableBtn>
+
+          {/* Touch controls — only visible on mobile via CSS */}
+          <div className="touch-controls">
+            {/* Left: indicator buttons */}
+            <div className="touch-inds">
+              <button className="touch-btn touch-ind-btn" onPointerDown={() => { haptic(12); engineRef.current?.triggerIndicator('left'); }}>◀</button>
+              <button className="touch-btn touch-ind-btn" onPointerDown={() => { haptic(12); engineRef.current?.triggerIndicator('right'); }}>▶</button>
+            </div>
+            {/* Right: D-pad — top row: up; bottom row: left down right */}
+            <div className="touch-dpad">
+              <div className="touch-dpad-top">
+                <button className="touch-btn"
+                  onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowUp'); }}
+                  onPointerUp={() => engineRef.current?.releaseKey('ArrowUp')}
+                  onPointerCancel={() => engineRef.current?.releaseKey('ArrowUp')}
+                ><img src="/uparrow.svg" alt="Accelerate" style={{ width: 22, height: 22 }} /></button>
+              </div>
+              <div className="touch-dpad-bottom">
+                <button className="touch-btn"
+                  onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowLeft'); }}
+                  onPointerUp={() => engineRef.current?.releaseKey('ArrowLeft')}
+                  onPointerCancel={() => engineRef.current?.releaseKey('ArrowLeft')}
+                ><img src="/uparrow.svg" alt="Left" style={{ width: 22, height: 22, transform: 'rotate(270deg)' }} /></button>
+                <button className="touch-btn"
+                  onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowDown'); }}
+                  onPointerUp={() => engineRef.current?.releaseKey('ArrowDown')}
+                  onPointerCancel={() => engineRef.current?.releaseKey('ArrowDown')}
+                ><img src="/uparrow.svg" alt="Brake" style={{ width: 22, height: 22, transform: 'rotate(180deg)' }} /></button>
+                <button className="touch-btn"
+                  onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowRight'); }}
+                  onPointerUp={() => engineRef.current?.releaseKey('ArrowRight')}
+                  onPointerCancel={() => engineRef.current?.releaseKey('ArrowRight')}
+                ><img src="/uparrow.svg" alt="Right" style={{ width: 22, height: 22, transform: 'rotate(90deg)' }} /></button>
+              </div>
+            </div>
+          </div>
 
 
         </>

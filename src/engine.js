@@ -925,13 +925,16 @@ export class RoundaboutGame {
         [-0.73,  0.73], [ 0.36, -0.55],
       ];
 
-      const y = 40, scale = 16, spread = 140;
+      const scale = 16, spread = 140;
+      const y = window.innerWidth < 600 ? 36 : 40;
+      this._cloudInstances = [];
       pts.forEach(([nx, nz]) => {
         const inst = gltf.scene.clone(true);
         inst.rotation.y = Math.random() * Math.PI * 2;
         inst.scale.setScalar(norm * scale);
         inst.position.set(nx * spread, y, nz * spread);
         this.scene.add(inst);
+        this._cloudInstances.push(inst);
       });
     });
   }
@@ -1794,6 +1797,11 @@ export class RoundaboutGame {
   setPreviewCfg(cfg) {
     Object.assign(this._previewCfg, cfg);
   }
+
+  // ── Touch / on-screen control helpers ───────────────────────────────────────
+  pressKey(code)         { if (!this._preview) this.keys.add(code); }
+  releaseKey(code)       { this.keys.delete(code); }
+  triggerIndicator(side) { if (!this._preview) this._toggleIndicator(side); }
 
   // ── Advance to next mission after a successful exit ─────────────────────────
   nextMission() {

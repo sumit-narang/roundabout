@@ -5,6 +5,21 @@
 
 /* ── Sound toggle ─────────────────────────────────────────── */
 
+/* Drag-to-position coordinate label */
+.drag-coord {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .refresh-btn {
   position: absolute;
   bottom: 18px;
@@ -16,7 +31,7 @@
   font-size: 1.3rem;
   width: 42px;
   height: 42px;
-  cursor: pointer;
+  cursor: grab;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -24,6 +39,7 @@
   z-index: 30;
 }
 .refresh-btn:hover { background: rgba(0,0,0,0.7); }
+.refresh-btn:active { cursor: grabbing; }
 
 
 
@@ -38,14 +54,15 @@
   font-size: 1.3rem;
   width: 42px;
   height: 42px;
-  cursor: pointer;
+  cursor: grab;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background 0.15s;
   z-index: 30;
 }
-.sound-btn:hover { background: rgba(0,0,0,0.7); }
+.sound-btn:hover  { background: rgba(0,0,0,0.7); }
+.sound-btn:active { cursor: grabbing; }
 
 /* ── Layout ───────────────────────────────────────────────── */
 .game-wrap {
@@ -194,14 +211,14 @@ kbd.key-qe {
 /* Speed circle */
 .top-hud-speed {
   position: relative;
-  width: 72px;
-  height: 72px;
+  width: 80px;
+  height: 80px;
   flex-shrink: 0;
 }
 
 .top-hud-speed-ring {
-  width: 72px;
-  height: 72px;
+  width: 80px;
+  height: 80px;
   transform: rotate(90deg);
   display: block;
 }
@@ -232,6 +249,7 @@ kbd.key-qe {
   font-weight: 700;
   line-height: 1;
   color: #fff;
+  transition: font-size 0.1s;
 }
 
 .top-hud-speed-unit {
@@ -276,6 +294,8 @@ kbd.key-qe {
   color: rgba(255,255,255,0.5);
   font-weight: 500;
   margin-top: 3px;
+  white-space: normal;
+  text-align: left;
 }
 
 /* Indicator arrows inside the card */
@@ -388,6 +408,156 @@ kbd.key-qe {
   font-size: 1rem;
   color: rgba(255, 255, 255, 0.65);
   margin-bottom: 16px;
+  text-align: center;
+  white-space: normal;
+  max-width: 280px;
+}
+
+/* ── Touch controls (hidden on desktop, shown on mobile) ─── */
+.touch-controls {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0 16px 28px;
+  justify-content: space-between;
+  align-items: flex-end;
+  pointer-events: none;
+  z-index: 30;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Left side: indicator buttons side by side */
+.touch-inds {
+  display: flex;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+/* Right side: D-pad */
+.touch-dpad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.touch-dpad-top {
+  display: flex;
+  justify-content: center;
+}
+
+.touch-dpad-bottom {
+  display: flex;
+  gap: 8px;
+}
+
+.touch-btn {
+  width: 58px;
+  height: 58px;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.touch-btn:active {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.touch-ind-btn {
+  width: 58px;
+  height: 58px;
+  font-size: 1.2rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* ── Mobile responsive (≤ 600px) ─────────────────────────── */
+@media (max-width: 600px) {
+  /* Show touch controls */
+  .touch-controls { display: flex; }
+
+  /* Hide keyboard guide */
+  .key-guide { display: none; }
+
+  /* Start screen */
+  .start-vignette {
+    margin: 0 16px;
+    padding: 24px 20px 24px;
+  }
+  .start-screen h1  { font-size: 28px; margin-bottom: 14px; text-align: center; }
+  .start-desc       { font-size: 16px; text-align: center; color: rgba(255, 255, 255, 0.6); margin-top: 2px; font-weight: 300;}
+  .start-desc br    { display: none; }
+  .start-vignette .start-btn { margin-top: 30px; }
+
+  /* Top HUD — smaller and tighter */
+  .top-hud {
+    top: 28px;
+    /* gap: 12px; */
+    /* padding: 16px; */
+    border-radius: 20px;
+    max-width: calc(100% - 40px);
+  }
+  .top-hud-speed,
+  .top-hud-speed-ring { width: 66px; height: 66px; }
+  .top-hud-speed-num  { font-size: 1rem; }
+  .top-hud-speed-unit { font-size: 0.5rem; }
+  .top-hud-divider    { height: 60px; }
+  .top-hud-exit       { font-size: 20px; }
+  .top-hud-lane       { font-size: 14px; margin-top: 1px; }
+  .ind-arrow          { font-size: 1.2rem; }
+  .top-hud-indicators { display: none; }
+  .top-hud-mission ~ .top-hud-divider { display: none; }
+
+  /* Grace warning */
+  .grace-warning { height: 40px; padding: 8px 14px; }
+  .grace-text    { font-size: 15px; }
+  .grace-timer   { font-size: 17px; }
+
+  /* Result panels */
+  .result-panel  { padding: 22px 20px 20px; }
+  .result-title  { font-size: 28px; }
+  .result-msg    { font-size: 0.9rem; }
+
+  /* Stack refresh (top) + sound (below) on the right, 120px above the D-pad up-arrow */
+  .refresh-btn { top: auto; bottom: 330px; right: 16px; }
+  .sound-btn   { top: auto; bottom: 280px; right: 16px; }
+}
+
+/* ── Indicator hint below banner ────────────────────────── */
+.ind-hint {
+  position: fixed;
+  top: 136px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255,255,255,0.75);
+  font-size: 0.85rem;
+  font-weight: 400;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  animation: indHintFade 6s ease forwards;
+  z-index: 15;
+}
+
+@keyframes indHintFade {
+  0%   { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (max-width: 600px) {
+  .ind-hint { top: 134px; font-size: 0.78rem; white-space: normal; text-align: center; max-width: calc(100% - 80px); }
 }
 
 /* ── Steer indicator ─────────────────────────────────────── */
