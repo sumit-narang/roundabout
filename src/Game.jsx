@@ -2,45 +2,55 @@ import { useEffect, useRef, useState } from 'react';
 import { RoundaboutGame } from './engine';
 import './Game.css';
 
-const SQ_R = 50, SQ_N = 4.2;
+const SQ_R = 40, SQ_N = 4;
 
 const buildSquirclePath = (w, h, r, n) => {
   const cr = Math.min(r, w / 2, h / 2);
-  const steps = 24;
-  const corner = (cx, cy, a1, a2) =>
-    Array.from({ length: steps + 1 }, (_, i) => {
-      const t = a1 + (i / steps) * (a2 - a1);
-      const c = Math.cos(t), s = Math.sin(t);
-      const x = (cx + cr * Math.sign(c) * Math.pow(Math.abs(c), 2 / n)).toFixed(2);
-      const y = (cy + cr * Math.sign(s) * Math.pow(Math.abs(s), 2 / n)).toFixed(2);
-      return `${x} ${y}`;
-    });
-  const pts = [
-    ...corner(cr,     cr,     -Math.PI,      -Math.PI / 2),
-    ...corner(w - cr, cr,     -Math.PI / 2,  0),
-    ...corner(w - cr, h - cr, 0,             Math.PI / 2),
-    ...corner(cr,     h - cr, Math.PI / 2,   Math.PI),
-  ];
-  return `M ${pts.join(' L ')} Z`;
+  if (cr === 0) return `M 0 0 L ${w} 0 L ${w} ${h} L 0 ${h} Z`;
+  // Bezier control-point ratio derived by matching the superellipse at its 45° parameter.
+  // At t=π/4: point = (|cos(π/4)|^(2/n), same) = (SQRT1_2^(2/n), ...).
+  // A single symmetric cubic bezier from (cr,0) to (0,cr) with tangents aligned to the axes
+  // passes through that midpoint when the control offset = cr * k, where:
+  //   k = (f - 0.5) / 0.375,  f = SQRT1_2^(2/n)
+  // n=2 (circle) → k≈0.552  (standard circular bezier constant)
+  // n=4 (Apple)  → k≈0.909  (control pts near the corner vertex → square sides + sharp curve)
+  const f  = Math.pow(Math.SQRT1_2, 2 / n);
+  const k  = Math.min((f - 0.5) / 0.375, 1); // clamp: for n>5 corners are near-square anyway
+  const kc = cr * k;
+  const p  = v => v.toFixed(2);
+  return [
+    `M ${p(cr)} 0`,
+    `L ${p(w - cr)} 0`,
+    `C ${p(w - cr + kc)} 0 ${p(w)} ${p(cr - kc)} ${p(w)} ${p(cr)}`,
+    `L ${p(w)} ${p(h - cr)}`,
+    `C ${p(w)} ${p(h - cr + kc)} ${p(w - cr + kc)} ${p(h)} ${p(w - cr)} ${p(h)}`,
+    `L ${p(cr)} ${p(h)}`,
+    `C ${p(cr - kc)} ${p(h)} 0 ${p(h - cr + kc)} 0 ${p(h - cr)}`,
+    `L 0 ${p(cr)}`,
+    `C 0 ${p(cr - kc)} ${p(cr - kc)} 0 ${p(cr)} 0`,
+    `Z`,
+  ].join(' ');
 };
 
-function SquircleBox({ as: Tag = 'div', r = SQ_R, n = SQ_N, className, style, children, ...props }) {
+function SquircleBox({ as: Tag = 'div', r = SQ_R, n = SQ_N, disabled = false, className, style, children, ...props }) {
   const ref = useRef(null);
-  const [size, setSize] = useState(null);
+  const [clipPath, setClipPath] = useState(undefined);
   useEffect(() => {
+    if (disabled) { setClipPath(undefined); return; }
     const el = ref.current;
     if (!el) return;
-    const update = () => setSize({ w: el.offsetWidth, h: el.offsetHeight });
+    const update = () => {
+      const w = el.offsetWidth, h = el.offsetHeight;
+      if (w > 0 && h > 0)
+        setClipPath(`path("${buildSquirclePath(w, h, r, n)}")`);
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
-  const clipPath = size
-    ? `path("${buildSquirclePath(size.w, size.h, r, n)}")`
-    : undefined;
+  }, [r, n, disabled]);
   return (
-    <Tag ref={ref} className={className} style={clipPath ? { ...style, clipPath } : style} {...props}>
+    <Tag ref={ref} className={className} style={clipPath ? { ...style, clipPath, borderRadius: 0 } : style} {...props}>
       {children}
     </Tag>
   );
@@ -56,12 +66,6 @@ const ArrowKey = ({ deg = 0 }) => (
   </kbd>
 );
 
-const PHASE_LABELS = {
-  approaching:   'Approaching',
-  on_roundabout: 'On Roundabout',
-  exiting:       'Exiting',
-  completed:     'Completed!',
-};
 const ORDINALS = { 1: '1st', 2: '2nd', 3: '3rd' };
 const IND_HINTS = {
   1: 'Indicate left on approach',
@@ -196,7 +200,7 @@ export default function Game() {
       {started && (
         <>
           {/* Top HUD card — speed + mission info */}
-          <SquircleBox className="top-hud" r={32} n={2.6}>
+          <SquircleBox className="top-hud">
             <div className="top-hud-speed">
               {renderSpeedo()}
             </div>
@@ -229,11 +233,11 @@ export default function Game() {
 
           {/* Warning banner */}
           {(hud.graceActive && !hud.failed) && (
-            <div className="grace-warning">
+            <SquircleBox className="grace-warning">
               <img src="/warning.svg" alt="" width={22} height={22} />
               <span className="grace-text">{GRACE_MSG[hud.graceRequired] ?? 'Signal Left'}</span>
               <span className="grace-timer">{Math.ceil(hud.graceTimer) || 3}s</span>
-            </div>
+            </SquircleBox>
           )}
 
           {/* Game-over overlay */}
@@ -269,16 +273,17 @@ export default function Game() {
 
 
           {/* Refresh button */}
-          <button className="refresh-btn" onClick={() => window.location.reload()}>
-            <img src="/refresh.svg" alt="Refresh" />
+          <button className="refresh-btn" onClick={() => window.location.reload()} onMouseDown={e => e.currentTarget.blur()}>
+            <img src="/refresh.svg" alt="Refresh" draggable="false" />
           </button>
 
           {/* Sound toggle */}
           <button
             className="sound-btn"
             onClick={() => setMuted(engineRef.current?.toggleMute() ?? false)}
+            onMouseDown={e => e.currentTarget.blur()}
           >
-            <img src={muted ? '/soundOFF.svg' : '/soundON.svg'} alt={muted ? 'Unmute' : 'Mute'} />
+            <img src={muted ? '/soundOFF.svg' : '/soundON.svg'} alt={muted ? 'Unmute' : 'Mute'} draggable="false" />
           </button>
 
           {/* Touch controls — only visible on mobile via CSS */}

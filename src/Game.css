@@ -6,10 +6,8 @@
 /* ── Sound toggle ─────────────────────────────────────────── */
 
 
-.refresh-btn {
-  position: absolute;
-  bottom: 18px;
-  right: 72px;
+.refresh-btn,
+.sound-btn {
   background: none;
   border: none;
   color: #fff;
@@ -20,22 +18,32 @@
   align-items: center;
   justify-content: center;
   z-index: 30;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.refresh-btn:focus-visible,
+.sound-btn:focus-visible { outline: none; }
+
+.refresh-btn {
+  position: absolute;
+  bottom: 18px;
+  right: 72px;
 }
 
 .sound-btn {
   position: absolute;
   bottom: 18px;
   right: 18px;
-  background: none;
-  border: none;
-  color: #fff;
-  width: 44px;
-  height: 44px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 30;
+}
+
+.refresh-btn img,
+.sound-btn img {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
 }
 
 /* ── Layout ───────────────────────────────────────────────── */
@@ -80,6 +88,7 @@
 
 .start-desc {
   font-size: 16px;
+  font-weight: 300;
   color: rgba(255,255,255,0.8);
   margin: -8px 0 0;
   line-height: 1.45;
@@ -146,11 +155,12 @@ kbd.key-qe {
 
 .start-btn {
   width: 100%;
-  background: #f09030;
-  color: #fff;
+  background: #fff;
+  color: #000;
+  font-family: 'Inter', system-ui, sans-serif;
   font-size: 1.05rem;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.3px;
   border: none;
   border-radius: 50px;
   padding: 15px;
@@ -159,7 +169,7 @@ kbd.key-qe {
 }
 
 .start-btn:hover {
-  background: #f5a040;
+  background: rgba(255, 255, 255, 0.88);
 }
 
 
@@ -477,7 +487,7 @@ kbd.key-qe {
     margin: 0 16px;
   }
   .start-screen h1  { font-size: 28px; margin-bottom: 14px; text-align: center; }
-  .start-desc       { font-size: 16px; text-align: center; color: rgba(255, 255, 255, 0.6); margin-top: 2px; font-weight: 300;}
+  .start-desc       { font-size: 16px; text-align: center; margin-top: 2px; }
   .start-desc br    { display: none; }
   .start-vignette .start-btn { margin-top: 30px; }
 
