@@ -127,7 +127,7 @@ export class RoundaboutGame {
     this.onHUD   = onHUD;
     this.keys    = new Set();
     this.running     = false;
-    this.clock       = new THREE.Clock();
+    this.clock       = new THREE.Timer();
     this.elapsed     = 0;
     this._blinkTimer  = 0;
     this._blinkOn     = false;
@@ -239,7 +239,7 @@ export class RoundaboutGame {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type      = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type      = THREE.PCFShadowMap;
     this.renderer.outputColorSpace    = THREE.SRGBColorSpace;
     this.renderer.toneMapping         = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.85;
@@ -1874,7 +1874,7 @@ export class RoundaboutGame {
     );
     if (!onRoad) {
       car.failed    = true;
-      car.failReason = dist < RB_IN ? 'You drove into the centre island. Stay focused next time!' : "That's grass, not asphalt. Stay on the road.";
+      car.failReason = dist < RB_IN ? 'You drove into the central island. Stay focused next time!' : "That's grass, not asphalt. Stay on the road.";
       return;
     }
 
@@ -1885,7 +1885,7 @@ export class RoundaboutGame {
       const dz = car.pos.z - npc.mesh.position.z;
       if (dx * dx + dz * dz < 3.5 * 3.5) {
         car.failed    = true;
-        car.failReason = 'You crashed into the traffic. Stay focused next time!';
+        car.failReason = 'You crashed into traffic. Stay focused next time!';
         return;
       }
     }
@@ -2044,6 +2044,7 @@ export class RoundaboutGame {
   _update() {
     // Cap dt to 100 ms so a backgrounded tab or slow startup frame doesn't
     // produce a giant timestep that warps timers or physics.
+    this.clock.update();
     const dt = Math.min(this.clock.getDelta(), 0.1);
     // Scale factor: 1.0 at 60 fps. All per-frame physics values are multiplied
     // by dtScale so the simulation runs at the same real-world speed regardless

@@ -2,47 +2,47 @@ import { useEffect, useRef, useState } from 'react';
 import { RoundaboutGame } from './engine';
 import './Game.css';
 
-function DraggableBtn({ className, onClick, children }) {
-  const [pos, setPos]       = useState(null);
-  const [coord, setCoord]   = useState('');
-  const drag    = useRef(null);
-  const moved   = useRef(false);
+const SQ_R = 50, SQ_N = 4.2;
 
-  const onPointerDown = e => {
-    moved.current = false;
-    const rect = e.currentTarget.getBoundingClientRect();
-    drag.current = { cx: e.clientX, cy: e.clientY, bx: pos?.x ?? rect.left, by: pos?.y ?? rect.top };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
+const buildSquirclePath = (w, h, r, n) => {
+  const cr = Math.min(r, w / 2, h / 2);
+  const steps = 24;
+  const corner = (cx, cy, a1, a2) =>
+    Array.from({ length: steps + 1 }, (_, i) => {
+      const t = a1 + (i / steps) * (a2 - a1);
+      const c = Math.cos(t), s = Math.sin(t);
+      const x = (cx + cr * Math.sign(c) * Math.pow(Math.abs(c), 2 / n)).toFixed(2);
+      const y = (cy + cr * Math.sign(s) * Math.pow(Math.abs(s), 2 / n)).toFixed(2);
+      return `${x} ${y}`;
+    });
+  const pts = [
+    ...corner(cr,     cr,     -Math.PI,      -Math.PI / 2),
+    ...corner(w - cr, cr,     -Math.PI / 2,  0),
+    ...corner(w - cr, h - cr, 0,             Math.PI / 2),
+    ...corner(cr,     h - cr, Math.PI / 2,   Math.PI),
+  ];
+  return `M ${pts.join(' L ')} Z`;
+};
 
-  const onPointerMove = e => {
-    const d = drag.current;
-    if (!d) return;
-    const dx = e.clientX - d.cx, dy = e.clientY - d.cy;
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved.current = true;
-    if (!moved.current) return;
-    const nx = d.bx + dx, ny = d.by + dy;
-    setPos({ x: nx, y: ny });
-    setCoord(`${Math.round(nx)}, ${Math.round(ny)}`);
-  };
-
-  const onPointerUp  = () => { drag.current = null; };
-
-  const handleClick  = e => {
-    if (moved.current) { moved.current = false; return; }
-    onClick?.(e);
-  };
-
-  const style = pos ? { position: 'fixed', left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' } : {};
-
+function SquircleBox({ as: Tag = 'div', r = SQ_R, n = SQ_N, className, style, children, ...props }) {
+  const ref = useRef(null);
+  const [size, setSize] = useState(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setSize({ w: el.offsetWidth, h: el.offsetHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const clipPath = size
+    ? `path("${buildSquirclePath(size.w, size.h, r, n)}")`
+    : undefined;
   return (
-    <button className={className} style={style}
-      onPointerDown={onPointerDown} onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp} onClick={handleClick}
-    >
+    <Tag ref={ref} className={className} style={clipPath ? { ...style, clipPath } : style} {...props}>
       {children}
-      {pos && <span className="drag-coord">{coord || `${Math.round(pos.x)}, ${Math.round(pos.y)}`}</span>}
-    </button>
+    </Tag>
   );
 }
 
@@ -64,18 +64,18 @@ const PHASE_LABELS = {
 };
 const ORDINALS = { 1: '1st', 2: '2nd', 3: '3rd' };
 const IND_HINTS = {
-  1: 'Indicate Left on Approach',
-  2: 'No Indicator on Approach. Signal Left After 1st Exit.',
-  3: 'Indicate Right on Approach',
+  1: 'Indicate left on approach',
+  2: 'No indicator on approach. Signal left after the 1st exit',
+  3: 'Indicate right on approach',
 };
 const GRACE_MSG = {
-  left:           'Signal Left',
-  right:          'Signal Right',
-  none:           'Cancel Indicator',
-  approach_outer: 'Move to Left (Outer) Lane',
-  approach_inner: 'Move to Right (Inner) Lane',
-  ring_outer:     'Move to Outer Ring Lane',
-  ring_inner:     'Move to Inner Ring Lane',
+  left:           'Signal left',
+  right:          'Signal right',
+  none:           'Cancel indicator',
+  approach_outer: 'Move to left (outer) lane',
+  approach_inner: 'Move to right (inner) lane',
+  ring_outer:     'Move to outer ring lane',
+  ring_inner:     'Move to inner ring lane',
   signal:         'Signal before changing lane',
 };
 
@@ -119,6 +119,37 @@ export default function Game() {
   useEffect(() => { if (hud.failed)        haptic([60, 40, 100]); },      [hud.failed]);
   useEffect(() => { if (hud.showComplete)  haptic([40, 20, 40, 20, 80]); }, [hud.showComplete]);
 
+  const renderSpeedo = () => {
+    const cx = 40, cy = 40, r = 30;
+    const sw = speedCfg.strokeWidth;
+    const ratio = hud.speedRatio;
+    const n = 20, segFrac = 0.72;
+    const lit = Math.round(ratio * n);
+    const step = (2 * Math.PI) / n;
+    const segs = Array.from({ length: n }, (_, i) => {
+      const a0 = -Math.PI / 2 + i * step;
+      const a1 = a0 + step * segFrac;
+      const x1 = (cx + r * Math.cos(a0)).toFixed(2);
+      const y1 = (cy + r * Math.sin(a0)).toFixed(2);
+      const x2 = (cx + r * Math.cos(a1)).toFixed(2);
+      const y2 = (cy + r * Math.sin(a1)).toFixed(2);
+      return (
+        <path key={i} d={`M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`}
+          fill="none" strokeWidth={sw} strokeLinecap="butt"
+          stroke={i < lit ? '#00e5ff' : 'rgba(255,255,255,0.08)'} />
+      );
+    });
+    return (
+      <>
+        <svg viewBox="4 4 72 72" style={{ width: '100%', height: '100%', display: 'block' }}>{segs}</svg>
+        <div className="top-hud-speed-text">
+          <span className="top-hud-speed-num">{hud.speed}</span>
+          <span className="top-hud-speed-unit">km/h</span>
+        </div>
+      </>
+    );
+  };
+
   return (
     <div className="game-wrap">
       <canvas ref={canvasRef} className="game-canvas" />
@@ -126,7 +157,7 @@ export default function Game() {
       {/* ── Start screen ── */}
       {!started && (
         <div className="start-screen">
-          <div className="start-vignette">
+          <SquircleBox className="start-vignette">
             <h1>ROUNDABOUT</h1>
             <p className="start-desc">Master the madness of Ireland’s roundabouts and <br />prove your driving skill</p>
             <div className="key-guide">
@@ -147,7 +178,7 @@ export default function Game() {
                 <div className="key-group"><kbd className="key-qe">Q</kbd><kbd className="key-qe">E</kbd></div>
               </div>
             </div>
-            <button
+            <SquircleBox as="button"
               className="start-btn"
               onClick={() => { haptic(25); setStarted(true); engineRef.current?.startGame(); }}
               onMouseEnter={() => setBtnHovered(true)}
@@ -155,9 +186,9 @@ export default function Game() {
               style={glowStyle(btnHovered)}
             >
               Drive
-            </button>
+            </SquircleBox>
 
-          </div>
+          </SquircleBox>
         </div>
       )}
 
@@ -165,17 +196,9 @@ export default function Game() {
       {started && (
         <>
           {/* Top HUD card — speed + mission info */}
-          <div className="top-hud">
+          <SquircleBox className="top-hud" r={32} n={2.6}>
             <div className="top-hud-speed">
-              <svg className="top-hud-speed-ring" viewBox="4 4 72 72">
-                <circle cx="40" cy="40" r="30" className="speed-ring-bg" strokeWidth={speedCfg.strokeWidth} style={{ stroke: `rgba(255,255,255,${speedCfg.bgOpacity})` }} />
-                <circle cx="40" cy="40" r="30" className="speed-ring-fill" strokeWidth={speedCfg.strokeWidth} style={{ stroke: speedCfg.color }}
-                  strokeDasharray={`${hud.speedRatio * 188.5} 188.5`} />
-              </svg>
-              <div className="top-hud-speed-text">
-                <span className="top-hud-speed-num">{hud.speed}</span>
-                <span className="top-hud-speed-unit">Km/hr</span>
-              </div>
+              {renderSpeedo()}
             </div>
 
             <div className="top-hud-divider" />
@@ -186,8 +209,8 @@ export default function Game() {
               </div>
               <div className="top-hud-lane">
                 {hud.requiredLane === 'either'
-                  ? 'Use Either Lane'
-                  : `Use ${hud.requiredLane === 'outer' ? 'Outer' : 'Inner'} Lane On Approach`}
+                  ? 'Use either lane'
+                  : `Use ${hud.requiredLane === 'outer' ? 'outer' : 'inner'} lane on approach`}
               </div>
             </div>
 
@@ -197,7 +220,7 @@ export default function Game() {
               <div className={`ind-arrow ind-left${hud.leftIndicator ? ' on' : ''}`}>▶</div>
               <div className={`ind-arrow ind-right${hud.rightIndicator ? ' on' : ''}`}>▶</div>
             </div>
-          </div>
+          </SquircleBox>
 
           {/* Indicator hint — appears below banner for 6s on each new mission */}
           {showIndHint && (
@@ -216,10 +239,10 @@ export default function Game() {
           {/* Game-over overlay */}
           {hud.failed && (
             <div className="result-overlay">
-              <div className="result-panel result-fail">
+              <SquircleBox className="result-panel result-fail">
                 <div className="result-title">FAILED</div>
                 <div className="result-msg">{hud.failReason}</div>
-                <button
+                <SquircleBox as="button"
                   className="start-btn"
                   onClick={() => engineRef.current?.restart()}
                   onMouseEnter={() => setRetryHovered(true)}
@@ -227,18 +250,18 @@ export default function Game() {
                   style={glowStyle(retryHovered)}
                 >
                   Try Again
-                </button>
-              </div>
+                </SquircleBox>
+              </SquircleBox>
             </div>
           )}
 
           {/* Mission complete overlay */}
           {hud.showComplete && (
             <div className="result-overlay">
-              <div className="result-panel result-win">
+              <SquircleBox className="result-panel result-win">
                 <div className="result-title">WELL DONE!</div>
                 <div className="result-msg">Starting new mission…</div>
-              </div>
+              </SquircleBox>
             </div>
           )}
 
@@ -246,50 +269,50 @@ export default function Game() {
 
 
           {/* Refresh button */}
-          <DraggableBtn className="refresh-btn" onClick={() => window.location.reload()}>
-            <img src="/refresh.svg" alt="Refresh" width={20} height={20} />
-          </DraggableBtn>
+          <button className="refresh-btn" onClick={() => window.location.reload()}>
+            <img src="/refresh.svg" alt="Refresh" />
+          </button>
 
           {/* Sound toggle */}
-          <DraggableBtn
+          <button
             className="sound-btn"
             onClick={() => setMuted(engineRef.current?.toggleMute() ?? false)}
           >
-            <img src={muted ? '/soundOFF.svg' : '/soundON.svg'} alt={muted ? 'Unmute' : 'Mute'} width={20} height={20} />
-          </DraggableBtn>
+            <img src={muted ? '/soundOFF.svg' : '/soundON.svg'} alt={muted ? 'Unmute' : 'Mute'} />
+          </button>
 
           {/* Touch controls — only visible on mobile via CSS */}
           <div className="touch-controls">
             {/* Left: indicator buttons */}
             <div className="touch-inds">
-              <button className="touch-btn touch-ind-btn" onPointerDown={() => { haptic(12); engineRef.current?.triggerIndicator('left'); }}>◀</button>
-              <button className="touch-btn touch-ind-btn" onPointerDown={() => { haptic(12); engineRef.current?.triggerIndicator('right'); }}>▶</button>
+              <SquircleBox as="button" r={14} className="touch-btn touch-ind-btn" onPointerDown={() => { haptic(12); engineRef.current?.triggerIndicator('left'); }}>◀</SquircleBox>
+              <SquircleBox as="button" r={14} className="touch-btn touch-ind-btn" onPointerDown={() => { haptic(12); engineRef.current?.triggerIndicator('right'); }}>▶</SquircleBox>
             </div>
             {/* Right: D-pad — top row: up; bottom row: left down right */}
             <div className="touch-dpad">
               <div className="touch-dpad-top">
-                <button className="touch-btn"
+                <SquircleBox as="button" r={14} className="touch-btn"
                   onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowUp'); }}
                   onPointerUp={() => engineRef.current?.releaseKey('ArrowUp')}
                   onPointerCancel={() => engineRef.current?.releaseKey('ArrowUp')}
-                ><img src="/uparrow.svg" alt="Accelerate" style={{ width: 22, height: 22 }} /></button>
+                ><img src="/uparrow.svg" alt="Accelerate" style={{ width: 22, height: 22 }} /></SquircleBox>
               </div>
               <div className="touch-dpad-bottom">
-                <button className="touch-btn"
+                <SquircleBox as="button" r={14} className="touch-btn"
                   onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowLeft'); }}
                   onPointerUp={() => engineRef.current?.releaseKey('ArrowLeft')}
                   onPointerCancel={() => engineRef.current?.releaseKey('ArrowLeft')}
-                ><img src="/uparrow.svg" alt="Left" style={{ width: 22, height: 22, transform: 'rotate(270deg)' }} /></button>
-                <button className="touch-btn"
+                ><img src="/uparrow.svg" alt="Left" style={{ width: 22, height: 22, transform: 'rotate(270deg)' }} /></SquircleBox>
+                <SquircleBox as="button" r={14} className="touch-btn"
                   onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowDown'); }}
                   onPointerUp={() => engineRef.current?.releaseKey('ArrowDown')}
                   onPointerCancel={() => engineRef.current?.releaseKey('ArrowDown')}
-                ><img src="/uparrow.svg" alt="Brake" style={{ width: 22, height: 22, transform: 'rotate(180deg)' }} /></button>
-                <button className="touch-btn"
+                ><img src="/uparrow.svg" alt="Brake" style={{ width: 22, height: 22, transform: 'rotate(180deg)' }} /></SquircleBox>
+                <SquircleBox as="button" r={14} className="touch-btn"
                   onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowRight'); }}
                   onPointerUp={() => engineRef.current?.releaseKey('ArrowRight')}
                   onPointerCancel={() => engineRef.current?.releaseKey('ArrowRight')}
-                ><img src="/uparrow.svg" alt="Right" style={{ width: 22, height: 22, transform: 'rotate(90deg)' }} /></button>
+                ><img src="/uparrow.svg" alt="Right" style={{ width: 22, height: 22, transform: 'rotate(90deg)' }} /></SquircleBox>
               </div>
             </div>
           </div>
