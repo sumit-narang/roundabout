@@ -1779,6 +1779,7 @@ export class RoundaboutGame {
     this._checkCDone            = false;
     this._checkDDone            = false;
     this._checkLaneApproachDone = false;
+    this._checkExitLaneDone     = false;
   }
 
   // ── Exit preview and begin gameplay ────────────────────────────────────────
@@ -1900,6 +1901,8 @@ export class RoundaboutGame {
       req === 'approach_inner' ? (car.pos.x >= -LANE_W && car.pos.x < 0) :
       req === 'ring_outer'     ? dist > RB_MID :
       req === 'ring_inner'     ? dist < RB_MID :
+      req === 'exit_left'      ? (car.targetExitNum === 1 ? car.pos.z > LANE_W : car.pos.x < -LANE_W) :
+      req === 'exit_right'     ? (car.targetExitNum === 2 ? car.pos.x > -LANE_W : car.pos.z > -LANE_W) :
       req === 'signal'         ? (car.leftIndicator || car.rightIndicator) :
       true;
 
@@ -1912,9 +1915,13 @@ export class RoundaboutGame {
         car.failed     = true;
         car.graceActive = false;
         const indViolations = ['left', 'right', 'none'];
-        car.failReason = indViolations.includes(car.graceRequired)
-          ? "No signal? Other drivers can't read your mind."
-          : 'You didn\'t move into the correct lane in time.';
+        car.failReason = car.graceRequired === 'exit_right'
+          ? "Maintain lane position when exiting."
+          : car.graceRequired === 'exit_left'
+            ? "Maintain lane position when exiting."
+          : indViolations.includes(car.graceRequired)
+            ? "No signal? Other drivers can't read your mind."
+            : 'You didn\'t move into the correct lane in time.';
         return;
       }
     }
@@ -1984,9 +1991,11 @@ export class RoundaboutGame {
         if (!condOk('left')) startGrace('left');
       }
 
-      // ── Check (c): near exit (~40°) — all exits need left ────────────────
-      // Checked before ring-lane so indicator violation takes priority.
-      if (!this._checkCDone && car.traveledAngle >= car.exitTravelTarget - 0.7) {
+      // ── Check (c): left indicator before exit ────────────────────────────
+      // Exit 1 & 2: fires ~40° before exit.
+      // Exit 3: fires just after passing exit 2 (North, π radians) — stay inner, signal left.
+      const checkCThreshold = car.targetExitNum === 3 ? Math.PI + 0.1 : car.exitTravelTarget - 0.7;
+      if (!this._checkCDone && car.traveledAngle >= checkCThreshold) {
         this._checkCDone = true;
         if (!condOk('left')) startGrace('left');
       }
@@ -1994,16 +2003,19 @@ export class RoundaboutGame {
       // ── Ring lane check (continuous) ──────────────────────────────────────
       // Exit 1: always outer ring.
       // Exit 2: stay in the ring lane that matches your approach lane throughout.
-      // Exit 3: inner ring until ~40° from exit, then move to outer.
+      // Exit 3: inner ring throughout — no lane change required before exit.
       let needOuterRing;
       if (car.targetExitNum === 1) {
         needOuterRing = true;
       } else if (car.targetExitNum === 2) {
         needOuterRing = car.approachLane === 'outer'; // maintain whichever lane you chose
       } else {
-        needOuterRing = car.traveledAngle >= car.exitTravelTarget - 0.7;
+        needOuterRing = false; // exit 3: stay inner ring throughout
       }
-      if (needOuterRing !== (dist > RB_MID)) {
+      // For exits 2 & 3, once check C has fired (car committed to exit),
+      // stop enforcing ring lane — the car will naturally cross ring areas when exiting.
+      const ringLaneCheckActive = !((car.targetExitNum === 2 || car.targetExitNum === 3) && this._checkCDone);
+      if (ringLaneCheckActive && needOuterRing !== (dist > RB_MID)) {
         startGrace(needOuterRing ? 'ring_outer' : 'ring_inner', 3.0);
       }
 
@@ -2033,7 +2045,32 @@ export class RoundaboutGame {
 
     // ── Phase: exiting ─────────────────────────────────────────────────────
     } else if (car.phase === 'exiting') {
+      // Exit 1 (west): must be in left lane from POV (z > LANE_W) on the exit arm.
+      if (car.targetExitNum === 1 && !this._checkExitLaneDone && car.pos.x < -(RB_OUT + 2)) {
+        this._checkExitLaneDone = true;
+        if (!condOk('exit_left')) startGrace('exit_left', 3.0);
+      }
+      // Exit 2 (north): match approach lane — outer approach exits left, inner approach exits right.
+      if (car.targetExitNum === 2 && !this._checkExitLaneDone && car.pos.z < -(RB_OUT + 2)) {
+        this._checkExitLaneDone = true;
+        const req2 = car.approachLane === 'outer' ? 'exit_left' : 'exit_right';
+        if (!condOk(req2)) startGrace(req2, 3.0);
+      }
+      // Exit 3 (east): must be in right lane from POV (z > LANE_W) on the exit arm.
+      // Check fires later (RB_OUT + 6) to give the car time to move into position after leaving the ring.
+      if (car.targetExitNum === 3 && !this._checkExitLaneDone && car.pos.x > RB_OUT + 6) {
+        this._checkExitLaneDone = true;
+        if (!condOk('exit_right')) startGrace('exit_right', 3.0);
+      }
       if (dist >= RB_OUT + 8) {
+        // Final hard check for all exits — fail if still in wrong lane at completion
+        const exitReq = (car.targetExitNum === 1 || (car.targetExitNum === 2 && car.approachLane === 'outer')) ? 'exit_left' : 'exit_right';
+        if (!condOk(exitReq)) {
+          car.failed      = true;
+          car.failReason  = "Maintain lane position when exiting.";
+          car.graceActive = false;
+          return;
+        }
         car.phase = 'completed';
         this._completeTimer = 2.0;
       }

@@ -57,20 +57,20 @@ function SquircleBox({ as: Tag = 'div', r = SQ_R, n = SQ_N, disabled = false, cl
 }
 
 const ArrowKey = ({ deg = 0 }) => (
-  <kbd>
+  <SquircleBox as="kbd" r={10}>
     <img
       src="/uparrow.svg"
       alt=""
       style={{ width: 18, height: 18, transform: `rotate(${deg}deg)`, display: 'block' }}
     />
-  </kbd>
+  </SquircleBox>
 );
 
 const ORDINALS = { 1: '1st', 2: '2nd', 3: '3rd' };
 const IND_HINTS = {
   1: 'Indicate left on approach',
   2: 'No indicator on approach. Signal left after the 1st exit',
-  3: 'Indicate right on approach',
+  3: 'Indicate right on approach. Signal left after the 2nd exit',
 };
 const GRACE_MSG = {
   left:           'Signal left',
@@ -81,6 +81,8 @@ const GRACE_MSG = {
   ring_outer:     'Move to outer ring lane',
   ring_inner:     'Move to inner ring lane',
   signal:         'Signal before changing lane',
+  exit_right:     'Move to right lane',
+  exit_left:      'Move to left lane',
 };
 
 export default function Game() {
@@ -179,7 +181,7 @@ export default function Game() {
               </div>
               <div className="key-row">
                 <span>Indicators</span>
-                <div className="key-group"><kbd className="key-qe">Q</kbd><kbd className="key-qe">E</kbd></div>
+                <div className="key-group"><SquircleBox as="kbd" r={10} className="key-qe">Q</SquircleBox><SquircleBox as="kbd" r={10} className="key-qe">E</SquircleBox></div>
               </div>
             </div>
             <SquircleBox as="button"
@@ -212,9 +214,13 @@ export default function Game() {
                 Take {ORDINALS[hud.targetExitNum]} Exit
               </div>
               <div className="top-hud-lane">
-                {hud.requiredLane === 'either'
-                  ? 'Use either lane'
-                  : `Use ${hud.requiredLane === 'outer' ? 'outer' : 'inner'} lane on approach`}
+                {hud.targetExitNum === 3
+                  ? 'Use right lane. Inner on roundabout'
+                  : hud.targetExitNum === 1
+                    ? 'Use left lane. Outer on roundabout'
+                    : hud.requiredLane === 'either'
+                      ? 'Use either lane'
+                      : `Use ${hud.requiredLane === 'outer' ? 'outer' : 'inner'} lane on approach`}
               </div>
             </div>
 
@@ -290,30 +296,30 @@ export default function Game() {
           <div className="touch-controls">
             {/* Left: indicator buttons */}
             <div className="touch-inds">
-              <SquircleBox as="button" r={14} className="touch-btn touch-ind-btn" onPointerDown={() => { haptic(12); engineRef.current?.triggerIndicator('left'); }}>◀</SquircleBox>
-              <SquircleBox as="button" r={14} className="touch-btn touch-ind-btn" onPointerDown={() => { haptic(12); engineRef.current?.triggerIndicator('right'); }}>▶</SquircleBox>
+              <SquircleBox as="button" className="touch-btn touch-ind-btn" onPointerDown={() => { haptic(12); engineRef.current?.triggerIndicator('left'); }}>◀</SquircleBox>
+              <SquircleBox as="button" className="touch-btn touch-ind-btn" onPointerDown={() => { haptic(12); engineRef.current?.triggerIndicator('right'); }}>▶</SquircleBox>
             </div>
             {/* Right: D-pad — top row: up; bottom row: left down right */}
             <div className="touch-dpad">
               <div className="touch-dpad-top">
-                <SquircleBox as="button" r={14} className="touch-btn"
+                <SquircleBox as="button" className="touch-btn"
                   onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowUp'); }}
                   onPointerUp={() => engineRef.current?.releaseKey('ArrowUp')}
                   onPointerCancel={() => engineRef.current?.releaseKey('ArrowUp')}
                 ><img src="/uparrow.svg" alt="Accelerate" style={{ width: 22, height: 22 }} /></SquircleBox>
               </div>
               <div className="touch-dpad-bottom">
-                <SquircleBox as="button" r={14} className="touch-btn"
+                <SquircleBox as="button" className="touch-btn"
                   onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowLeft'); }}
                   onPointerUp={() => engineRef.current?.releaseKey('ArrowLeft')}
                   onPointerCancel={() => engineRef.current?.releaseKey('ArrowLeft')}
                 ><img src="/uparrow.svg" alt="Left" style={{ width: 22, height: 22, transform: 'rotate(270deg)' }} /></SquircleBox>
-                <SquircleBox as="button" r={14} className="touch-btn"
+                <SquircleBox as="button" className="touch-btn"
                   onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowDown'); }}
                   onPointerUp={() => engineRef.current?.releaseKey('ArrowDown')}
                   onPointerCancel={() => engineRef.current?.releaseKey('ArrowDown')}
                 ><img src="/uparrow.svg" alt="Brake" style={{ width: 22, height: 22, transform: 'rotate(180deg)' }} /></SquircleBox>
-                <SquircleBox as="button" r={14} className="touch-btn"
+                <SquircleBox as="button" className="touch-btn"
                   onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowRight'); }}
                   onPointerUp={() => engineRef.current?.releaseKey('ArrowRight')}
                   onPointerCancel={() => engineRef.current?.releaseKey('ArrowRight')}

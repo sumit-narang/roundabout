@@ -256,6 +256,7 @@ kbd.key-qe {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
 }
 
 .top-hud-exit {
@@ -270,6 +271,7 @@ kbd.key-qe {
   color: rgba(255,255,255,0.5);
   font-weight: 400;
   margin-top: 3px;
+  white-space: normal;
 }
 
 .top-hud-ind {
@@ -444,7 +446,7 @@ kbd.key-qe {
   height: 58px;
   background: rgba(255, 255, 255, 0.2);
   border: 1px solid rgba(255, 255, 255, 0);
-  border-radius: 14px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -494,9 +496,11 @@ kbd.key-qe {
   /* Top HUD — smaller and tighter */
   .top-hud {
     top: 28px;
+    left: 20px;
+    right: 20px;
+    transform: none;
     padding: 14px 26px 14px 20px;
     border-radius: 20px;
-    max-width: calc(100% - 40px);
   }
   .top-hud-speed,
   .top-hud-speed-ring { width: 66px; height: 66px; }
