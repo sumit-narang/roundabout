@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 // ─── World constants ──────────────────────────────────────────────────────────
 const LANE_W  = 3.5;   // one lane width
@@ -223,9 +224,10 @@ export class RoundaboutGame {
     this._initRenderer();
     this._initScene();
     this._initLights();
-    this._buildWorld();
-    this._buildNPCs();
-    this._buildPlayerCar();
+    const loader = this._createLoader();
+    this._buildWorld(loader);
+    this._buildNPCs(loader);
+    this._buildPlayerCar(loader);
     this._initCamera();
     this._initDashboard();
     window.addEventListener('keydown', this._onKeyDown);
@@ -234,9 +236,18 @@ export class RoundaboutGame {
     this.start();
   }
 
+  _createLoader() {
+    const draco = new DRACOLoader();
+    draco.setDecoderPath('/draco/');
+    const loader = new GLTFLoader();
+    loader.setDRACOLoader(draco);
+    return loader;
+  }
+
   _initRenderer() {
-    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const isMobile = window.innerWidth <= 600;
+    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: !isMobile });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type      = THREE.PCFShadowMap;
@@ -257,7 +268,7 @@ export class RoundaboutGame {
     const sun = new THREE.DirectionalLight(0xfff3d0, 1.6);
     sun.position.set(80, 130, 60);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(1024, 1024);
     Object.assign(sun.shadow.camera, { near: 1, far: 500, left: -160, right: 160, top: 160, bottom: -160 });
     this.scene.add(sun);
 
@@ -265,9 +276,9 @@ export class RoundaboutGame {
   }
 
   // ── World building ─────────────────────────────────────────────────────────
-  _buildWorld() {
+  _buildWorld(loader) {
     // Grass texture ground plane
-    const grassTex = new THREE.TextureLoader().load('/grass.png');
+    const grassTex = new THREE.TextureLoader().load('/grass.webp');
     grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping;
     grassTex.repeat.set(100, 100);
     const ground = new THREE.Mesh(
@@ -282,9 +293,9 @@ export class RoundaboutGame {
     this._buildRoundabout();
     this._buildRoads();
     this._buildMarkings();
-    this._loadBuildings();
-    this._buildProps();
-    this._buildClouds();
+    this._loadBuildings(loader);
+    this._buildProps(loader);
+    this._buildClouds(loader);
     this._buildSkyDome();
   }
 
@@ -551,7 +562,7 @@ export class RoundaboutGame {
   }
 
   // ── Props: trees, kerbs, lamps ─────────────────────────────────────────────
-  _buildProps() {
+  _buildProps(loader) {
     const halfW = ROAD_W / 2;          // 7
     const treeX = halfW + 4;           // 11 — initial offset from road edge
 
@@ -593,7 +604,6 @@ export class RoundaboutGame {
     });
 
     // Load GLB and place all trees
-    const loader = new GLTFLoader();
     loader.load('/trees_low_poly.glb', (gltf) => {
       gltf.scene.traverse(child => {
         if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
@@ -624,11 +634,10 @@ export class RoundaboutGame {
       });
     });
 
-    this._buildLamps();
+    this._buildLamps(loader);
   }
 
-  _buildLamps() {
-    const loader = new GLTFLoader();
+  _buildLamps(loader) {
     loader.load('/lamp_post.glb', (gltf) => {
       gltf.scene.traverse(child => {
         if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
@@ -666,12 +675,11 @@ export class RoundaboutGame {
   }
 
   // ── Player car (Trabant GLB) ───────────────────────────────────────────────
-  _buildPlayerCar() {
+  _buildPlayerCar(loader) {
     this._playerCarMesh    = null;
     this._frontWheelGroups = null;
     this._playerIndMeshes  = { left: [], right: [] };
 
-    const loader = new GLTFLoader();
     loader.load('/car_white.glb', (gltf) => {
       gltf.scene.traverse(child => {
         if (child.isMesh) { child.castShadow = true; child.receiveShadow = false; }
@@ -821,8 +829,7 @@ export class RoundaboutGame {
     });
   }
 
-  _loadBuildings() {
-    const loader = new GLTFLoader();
+  _loadBuildings(loader) {
     const loadGLB = (url) => new Promise((resolve, reject) =>
       loader.load(url, resolve, undefined, reject));
 
@@ -904,8 +911,7 @@ export class RoundaboutGame {
     });
   }
 
-  _buildClouds() {
-    const loader = new GLTFLoader();
+  _buildClouds(loader) {
     loader.load('/cloud.glb', (gltf) => {
       gltf.scene.traverse(child => {
         if (child.isMesh) { child.castShadow = false; child.receiveShadow = false; }
@@ -949,7 +955,7 @@ export class RoundaboutGame {
   }
 
   // ── NPC traffic (state-machine path-following) ────────────────────────────
-  _buildNPCs() {
+  _buildNPCs(loader) {
     this.npcs = [];
 
     // Create NPC state with empty Group placeholders — GLB populated after load
@@ -979,7 +985,6 @@ export class RoundaboutGame {
     }
 
     // Load all NPC car GLBs then populate NPCs
-    const loader = new GLTFLoader();
     const loadGLB = (url) => new Promise(resolve => loader.load(url, resolve));
     Promise.all([loadGLB('/car_blue.glb'), loadGLB('/car_green.glb'), loadGLB('/car_orange.glb'), loadGLB('/car_purple.glb')]).then(([g1, g2, g3, g4]) => {
       // NPC 0=blue, 1=green, 2=orange, 3=purple, 4=blue (cycles)
