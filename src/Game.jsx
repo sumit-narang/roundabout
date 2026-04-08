@@ -56,10 +56,12 @@ function SquircleBox({ as: Tag = 'div', r = SQ_R, n = SQ_N, disabled = false, cl
   );
 }
 
+const BASE = import.meta.env.BASE_URL;
+
 const ArrowKey = ({ deg = 0 }) => (
   <SquircleBox as="kbd" r={10}>
     <img
-      src="/uparrow.svg"
+      src={`${BASE}icons/uparrow.svg`}
       alt=""
       style={{ width: 18, height: 18, transform: `rotate(${deg}deg)`, display: 'block' }}
     />
@@ -69,8 +71,8 @@ const ArrowKey = ({ deg = 0 }) => (
 const ORDINALS = { 1: '1st', 2: '2nd', 3: '3rd' };
 const IND_HINTS = {
   1: 'Indicate left on approach',
-  2: 'No indicator on approach. Signal left after the 1st exit',
-  3: 'Indicate right on approach. Signal left after the 2nd exit',
+  2: 'No indicator on approach. Signal left after passing the 1st exit',
+  3: 'Indicate right on approach. Signal left after passing the 2nd exit',
 };
 const GRACE_MSG = {
   left:           'Signal left',
@@ -90,7 +92,7 @@ export default function Game() {
   const engineRef = useRef(null);
   const [hud, setHud] = useState({
     speed: 0, speedRatio: 0, gear: 'D', steer: 0,
-    phase: 'approaching', targetExit: null, targetExitNum: null,
+    phase: 'approaching', targetExitNum: null,
     requiredLane: 'outer', leftIndicator: false, rightIndicator: false,
     approachLane: 'outer', ringLane: 'outer',
     graceActive: false, graceTimer: 0, graceRequired: null,
@@ -240,7 +242,7 @@ export default function Game() {
           {/* Warning banner */}
           {(hud.graceActive && !hud.failed) && (
             <SquircleBox className="grace-warning">
-              <img src="/warning.svg" alt="" width={22} height={22} />
+              <img src={`${BASE}icons/warning.svg`} alt="" width={22} height={22} />
               <span className="grace-text">{GRACE_MSG[hud.graceRequired] ?? 'Signal Left'}</span>
               <span className="grace-timer">{Math.ceil(hud.graceTimer) || 3}s</span>
             </SquircleBox>
@@ -270,7 +272,13 @@ export default function Game() {
             <div className="result-overlay">
               <SquircleBox className="result-panel result-win">
                 <div className="result-title">WELL DONE!</div>
-                <div className="result-msg">Starting new mission…</div>
+                <div className="result-msg">Roundabout mastered!</div>
+                <SquircleBox as="button"
+                  className="start-btn"
+                  onClick={() => { haptic(25); engineRef.current?.nextMission(); }}
+                >
+                  Next Mission
+                </SquircleBox>
               </SquircleBox>
             </div>
           )}
@@ -280,7 +288,7 @@ export default function Game() {
 
           {/* Refresh button */}
           <button className="refresh-btn" onClick={() => window.location.reload()} onMouseDown={e => e.currentTarget.blur()}>
-            <img src="/refresh.svg" alt="Refresh" draggable="false" />
+            <img src={`${BASE}icons/refresh.svg`} alt="Refresh" draggable="false" />
           </button>
 
           {/* Sound toggle */}
@@ -289,7 +297,7 @@ export default function Game() {
             onClick={() => setMuted(engineRef.current?.toggleMute() ?? false)}
             onMouseDown={e => e.currentTarget.blur()}
           >
-            <img src={muted ? '/soundOFF.svg' : '/soundON.svg'} alt={muted ? 'Unmute' : 'Mute'} draggable="false" />
+            <img src={muted ? `${BASE}icons/soundOFF.svg` : `${BASE}icons/soundON.svg`} alt={muted ? 'Unmute' : 'Mute'} draggable="false" />
           </button>
 
           {/* Touch controls — only visible on mobile via CSS */}
@@ -306,24 +314,24 @@ export default function Game() {
                   onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowUp'); }}
                   onPointerUp={() => engineRef.current?.releaseKey('ArrowUp')}
                   onPointerCancel={() => engineRef.current?.releaseKey('ArrowUp')}
-                ><img src="/uparrow.svg" alt="Accelerate" style={{ width: 22, height: 22 }} /></SquircleBox>
+                ><img src={`${BASE}icons/uparrow.svg`} alt="Accelerate" style={{ width: 22, height: 22 }} /></SquircleBox>
               </div>
               <div className="touch-dpad-bottom">
                 <SquircleBox as="button" className="touch-btn"
                   onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowLeft'); }}
                   onPointerUp={() => engineRef.current?.releaseKey('ArrowLeft')}
                   onPointerCancel={() => engineRef.current?.releaseKey('ArrowLeft')}
-                ><img src="/uparrow.svg" alt="Left" style={{ width: 22, height: 22, transform: 'rotate(270deg)' }} /></SquircleBox>
+                ><img src={`${BASE}icons/uparrow.svg`} alt="Left" style={{ width: 22, height: 22, transform: 'rotate(270deg)' }} /></SquircleBox>
                 <SquircleBox as="button" className="touch-btn"
                   onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowDown'); }}
                   onPointerUp={() => engineRef.current?.releaseKey('ArrowDown')}
                   onPointerCancel={() => engineRef.current?.releaseKey('ArrowDown')}
-                ><img src="/uparrow.svg" alt="Brake" style={{ width: 22, height: 22, transform: 'rotate(180deg)' }} /></SquircleBox>
+                ><img src={`${BASE}icons/uparrow.svg`} alt="Brake" style={{ width: 22, height: 22, transform: 'rotate(180deg)' }} /></SquircleBox>
                 <SquircleBox as="button" className="touch-btn"
                   onPointerDown={e => { haptic(8); e.currentTarget.setPointerCapture(e.pointerId); engineRef.current?.pressKey('ArrowRight'); }}
                   onPointerUp={() => engineRef.current?.releaseKey('ArrowRight')}
                   onPointerCancel={() => engineRef.current?.releaseKey('ArrowRight')}
-                ><img src="/uparrow.svg" alt="Right" style={{ width: 22, height: 22, transform: 'rotate(90deg)' }} /></SquircleBox>
+                ><img src={`${BASE}icons/uparrow.svg`} alt="Right" style={{ width: 22, height: 22, transform: 'rotate(90deg)' }} /></SquircleBox>
               </div>
             </div>
           </div>

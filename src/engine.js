@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
+const BASE = import.meta.env.BASE_URL;
+
 // ─── World constants ──────────────────────────────────────────────────────────
 const LANE_W  = 3.5;   // one lane width
 const ROAD_W  = 14;    // arm total (2 in + 2 out = 4 × 3.5)
@@ -12,73 +14,30 @@ const ROAD_L  = 110;   // road length from roundabout edge (game logic)
 const ROAD_VEXT = 180; // extra visual extension so roads fade into fog
 
 // ─── Mission / state-machine constants ────────────────────────────────────────
-// Ring angle: atan2(-z, x).  South entry = 3π/2.
-// UK clockwise traffic → angle DECREASES as car travels (South→West→North→East).
-// traveledAngle accumulates positively by NEGATING the atan2 delta each frame.
-const SOUTH_ENTRY_ANGLE = 3 * Math.PI / 2;
+// Ring angle convention: x = r·sin(θ), z = −r·cos(θ)  (θ: north=0, east=π/2, south=π, west=3π/2)
+// Ireland clockwise traffic → θ INCREASES each frame on the ring.
+// traveledAngle from south entry = (θ_arm - π + 2π) % 2π for an exit arm at θ_arm.
+const SOUTH_ENTRY_ANGLE = 3 * Math.PI / 2; // atan2(-z,x) convention; south arm entry
+const SOUTH_THETA = Math.PI;        // θ_arm: south
+const WEST_THETA  = 3 * Math.PI / 2; // θ_arm: west  (exit 1 — short detour, ~π/2 travel)
+const NORTH_THETA = 0;               // θ_arm: north (exit 2 — straight on, ~π  travel)
+const EAST_THETA  = Math.PI / 2;     // θ_arm: east  (exit 3 — right turn, ~3π/2 travel)
+const ALL_ARM_THETAS = [SOUTH_THETA, WEST_THETA, NORTH_THETA, EAST_THETA];
+// Fixed exits the player can be assigned (west=1, north=2, east=3)
 const EXITS = [
-  // 1st exit = West  (left turn):  outer approach lane, left indicator on approach
-  { name: 'west',  num: 1, travelAngle: Math.PI / 2,     requiredLane: 'outer', requiredRingLane: 'outer' },
-  // 2nd exit = North (straight):   either approach lane, no indicator; maintain lane through ring
-  { name: 'north', num: 2, travelAngle: Math.PI,          requiredLane: 'either', requiredRingLane: 'match' },
-  // 3rd exit = East  (right turn): inner approach lane, right indicator on approach
-  { name: 'east',  num: 3, travelAngle: 3 * Math.PI / 2, requiredLane: 'inner', requiredRingLane: 'inner' },
+  { num: 1, theta: WEST_THETA,  travelAngle: Math.PI / 2,     requiredLane: 'outer', requiredRingLane: 'outer' },
+  { num: 2, theta: NORTH_THETA, travelAngle: Math.PI,          requiredLane: 'either', requiredRingLane: 'match' },
+  { num: 3, theta: EAST_THETA,  travelAngle: 3 * Math.PI / 2, requiredLane: 'inner', requiredRingLane: 'inner' },
 ];
-// Indicator check required at each checkpoint per exit number
+// Indicator required at entry per exit zone
 const ENTRY_IND = { 1: 'left', 2: 'none', 3: 'right' };
 
 // ─── NPC traffic constants ────────────────────────────────────────────────────
-const NPC_SPEED   = 0.22;                      // units/frame along path
-const NPC_INNER_R = (RB_IN  + RB_MID) / 2;    // 14.5 — inner ring lane centre
-const NPC_OUTER_R = (RB_MID + RB_OUT) / 2;    // 19.5 — outer ring lane centre
-// Advance ring entry CW past geometric intersection so bezierArc makes a C-curve (not S-curve).
-// Advance ring exit trigger early for the same reason on the exit side.
-const ENTRY_ADVANCE = 0.4;   // radians CW past lane–ring intersection for entry arc target
-const EXIT_ADVANCE  = 0.4;   // radians before lane–ring intersection to start exit arc
-
-// Ring angle convention:  x = r·sin(θ),  z = −r·cos(θ)
-//   θ: north = 0,  east = π/2,  south = π,  west = 3π/2
-//   UK clockwise travel → θ INCREASES each frame
-const ARM_NAMES = ['south', 'north', 'east', 'west'];
-const ARM_CFG = {
-  south: {
-    ringAngle:       Math.PI,
-    approachHeading: 0,           // heading north (−z)
-    departHeading:   Math.PI,     // heading south (+z)
-    // UK near-side (x < 0) approach lanes; [x, z] spawn point
-    approachLanePos: (outer) => [outer ? -LANE_W * 1.5 : -LANE_W * 0.5,  RB_OUT + ROAD_L * 0.65],
-    // UK departure lanes (x > 0); snap x when exiting ring
-    snapDepart:      (pos, outer) => { pos.x = outer ?  LANE_W * 1.5 :  LANE_W * 0.5; },
-    despawnCheck:    (pos) => pos.z >  RB_OUT + ROAD_L * 0.6,
-  },
-  north: {
-    ringAngle:       0,
-    approachHeading: Math.PI,     // heading south (+z)
-    departHeading:   0,           // heading north (−z)
-    // UK near-side (x > 0) approach lanes
-    approachLanePos: (outer) => [outer ?  LANE_W * 1.5 :  LANE_W * 0.5, -(RB_OUT + ROAD_L * 0.65)],
-    snapDepart:      (pos, outer) => { pos.x = outer ? -LANE_W * 1.5 : -LANE_W * 0.5; },
-    despawnCheck:    (pos) => pos.z < -(RB_OUT + ROAD_L * 0.6),
-  },
-  east: {
-    ringAngle:       Math.PI / 2,
-    approachHeading: -Math.PI / 2, // heading west (−x)
-    departHeading:    Math.PI / 2, // heading east (+x)
-    // UK near-side (z > 0) approach lanes
-    approachLanePos: (outer) => [ RB_OUT + ROAD_L * 0.65, outer ?  LANE_W * 1.5 :  LANE_W * 0.5],
-    snapDepart:      (pos, outer) => { pos.z = outer ? -LANE_W * 1.5 : -LANE_W * 0.5; },
-    despawnCheck:    (pos) => pos.x >  RB_OUT + ROAD_L * 0.6,
-  },
-  west: {
-    ringAngle:       3 * Math.PI / 2,
-    approachHeading:  Math.PI / 2, // heading east (+x)
-    departHeading:   -Math.PI / 2, // heading west (−x)
-    // UK near-side (z < 0) approach lanes
-    approachLanePos: (outer) => [-(RB_OUT + ROAD_L * 0.65), outer ? -LANE_W * 1.5 : -LANE_W * 0.5],
-    snapDepart:      (pos, outer) => { pos.z = outer ?  LANE_W * 1.5 :  LANE_W * 0.5; },
-    despawnCheck:    (pos) => pos.x < -(RB_OUT + ROAD_L * 0.6),
-  },
-};
+const NPC_SPEED   = 0.22;
+const NPC_INNER_R = (RB_IN  + RB_MID) / 2;
+const NPC_OUTER_R = (RB_MID + RB_OUT) / 2;
+const ENTRY_ADVANCE = 0.4;
+const EXIT_ADVANCE  = 0.4;
 
 // ─── Car physics constants ────────────────────────────────────────────────────
 const MAX_SPEED   = 0.55;
@@ -170,11 +129,11 @@ export class RoundaboutGame {
       yawRate: 0,   // current angular velocity (rad/frame) — smooths heading changes
       // ── State machine ──
       phase:            'approaching',   // approaching | on_roundabout | exiting | completed
-      targetExit:       null,            // 'west' | 'north' | 'east'
-      targetExitNum:    null,            // 1 | 2 | 3
-      exitTravelTarget: 0,              // required traveledAngle (radians) to reach exit
-      requiredLane:     'outer',        // 'outer' | 'inner' (approach arm)
-      requiredRingLane: 'outer',        // 'outer' | 'inner' (ring)
+      targetExitNum:    null,           // 1 | 2 | 3 (zone: under/at/over 12 o'clock)
+      exitTravelTarget: 0,             // required traveledAngle (radians) to reach exit
+      exitArmAngle:     SOUTH_THETA,   // θ_arm of the exit arm (ring-angle convention)
+      requiredLane:     'outer',       // 'outer' | 'inner' | 'either' (approach arm)
+      requiredRingLane: 'outer',       // 'outer' | 'inner' | 'match' (ring)
       // ── Indicators (player-controlled via Q/E) ──
       leftIndicator:    false,
       rightIndicator:   false,
@@ -196,7 +155,9 @@ export class RoundaboutGame {
     this._checkCDone          = false;  // (c) near-exit indicator check fired
     this._checkDDone          = false;  // (d) exit-2: left indicator after passing exit 1
     this._checkLaneApproachDone = false; // approach-lane discipline check fired
-    this._missionIndex        = 0;      // cycles through EXITS in order
+    this._missionIndex  = 0;
+    this._lastExitIndex = -1;
+    this._exitTheta     = WEST_THETA;
     this._completeTimer       = 0;      // counts down after successful exit
     this._preview             = true;   // cinematic orbit until player clicks Drive
     this._previewCfg          = { r: 60, h: 32, spd: 0.02, fov: 36 };
@@ -238,7 +199,7 @@ export class RoundaboutGame {
 
   _createLoader() {
     const draco = new DRACOLoader();
-    draco.setDecoderPath('/draco/');
+    draco.setDecoderPath(`${BASE}draco/`);
     const loader = new GLTFLoader();
     loader.setDRACOLoader(draco);
     return loader;
@@ -278,7 +239,7 @@ export class RoundaboutGame {
   // ── World building ─────────────────────────────────────────────────────────
   _buildWorld(loader) {
     // Grass texture ground plane
-    const grassTex = new THREE.TextureLoader().load('/grass.webp');
+    const grassTex = new THREE.TextureLoader().load(`${BASE}textures/grass.webp`);
     grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping;
     grassTex.repeat.set(100, 100);
     const ground = new THREE.Mesh(
@@ -303,7 +264,7 @@ export class RoundaboutGame {
   _buildRoundabout() {
     const asMat    = new THREE.MeshLambertMaterial({ map: asphaltTex(4, 4) });
     const whiteMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    const islandGrassTex = new THREE.TextureLoader().load('/grass.png');
+    const islandGrassTex = new THREE.TextureLoader().load(`${BASE}textures/grass.webp`);
     islandGrassTex.wrapS = islandGrassTex.wrapT = THREE.RepeatWrapping;
     islandGrassTex.repeat.set(6, 6);
     const islandMat = new THREE.MeshLambertMaterial({ map: islandGrassTex });
@@ -368,40 +329,34 @@ export class RoundaboutGame {
     this.scene.add(iCurb);
   }
 
-  // ── Arms: 4-lane roads (2 approaching + 2 departing) ──────────────────────
+  // ── Arms: all 4 fixed (S/N/E/W) ──────────────────────────────────────────
   _buildRoads() {
-    const mkMat = () => new THREE.MeshLambertMaterial({ map: asphaltTex(2, 10) });
-
-    // Extend arms 3 units into the ring to eliminate the corner gap
-    const EXT  = 3;
-    const VEXT = ROAD_VEXT;
+    const mkMat  = () => new THREE.MeshLambertMaterial({ map: asphaltTex(2, 10) });
+    const EXT    = 3;
+    const VEXT   = ROAD_VEXT;
     const totalL = ROAD_L + EXT + VEXT;
     const armC   = RB_OUT + (ROAD_L + VEXT) / 2 - EXT / 2;
 
-    // N/S arms
-    this._road(mkMat(), ROAD_W, totalL, 0, 0, -armC);   // North arm
-    this._road(mkMat(), ROAD_W, totalL, 0, 0,  armC);    // South arm
+    this._road(mkMat(), ROAD_W, totalL,    0, 0,  armC); // South
+    this._road(mkMat(), ROAD_W, totalL,    0, 0, -armC); // North
+    this._road(mkMat(), totalL, ROAD_W,  armC, 0,    0); // East
+    this._road(mkMat(), totalL, ROAD_W, -armC, 0,    0); // West
 
-    // E/W arms
-    this._road(mkMat(), totalL, ROAD_W,  armC, 0, 0);    // East arm
-    this._road(mkMat(), totalL, ROAD_W, -armC, 0, 0);    // West arm
-
-    // White outer edge lines extended to match visual road length
     const whiteMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    const ew   = 0.25;
+    const ew    = 0.25;
     const halfW = ROAD_W / 2;
     const edgeL = ROAD_L + VEXT;
     const edgeC = RB_OUT + edgeL / 2;
-    // N/S edges
-    [-edgeC, edgeC].forEach(cz => {
-      this._road(whiteMat, ew, edgeL, -halfW + ew / 2, 0.03, cz);
-      this._road(whiteMat, ew, edgeL,  halfW - ew / 2, 0.03, cz);
-    });
-    // E/W edges
-    [edgeC, -edgeC].forEach(cx => {
-      this._road(whiteMat, edgeL, ew, cx, 0.03, -halfW + ew / 2);
-      this._road(whiteMat, edgeL, ew, cx, 0.03,  halfW - ew / 2);
-    });
+    // South + North edge lines
+    this._road(whiteMat, ew, edgeL, -halfW + ew / 2, 0.03,  edgeC);
+    this._road(whiteMat, ew, edgeL,  halfW - ew / 2, 0.03,  edgeC);
+    this._road(whiteMat, ew, edgeL, -halfW + ew / 2, 0.03, -edgeC);
+    this._road(whiteMat, ew, edgeL,  halfW - ew / 2, 0.03, -edgeC);
+    // East + West edge lines
+    this._road(whiteMat, edgeL, ew,  edgeC, 0.03, -halfW + ew / 2);
+    this._road(whiteMat, edgeL, ew,  edgeC, 0.03,  halfW - ew / 2);
+    this._road(whiteMat, edgeL, ew, -edgeC, 0.03, -halfW + ew / 2);
+    this._road(whiteMat, edgeL, ew, -edgeC, 0.03,  halfW - ew / 2);
   }
 
   _road(mat, w, l, x, y, z) {
@@ -412,15 +367,14 @@ export class RoundaboutGame {
     this.scene.add(mesh);
   }
 
-  // ── Road markings ──────────────────────────────────────────────────────────
+  // ── Road markings — all 4 arms ────────────────────────────────────────────
   _buildMarkings() {
-    const whiteMat  = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    const whiteMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    const halfW    = ROAD_W / 2;
+    const triLen   = 18;
+    const fullL    = ROAD_L + ROAD_VEXT;
+    const cz       = RB_OUT + fullL / 2;
 
-    const halfW  = ROAD_W / 2;  // 7
-    const ew     = 0.25;         // edge line width
-    const triLen = 18;           // length of hatched give-way triangle
-
-    // Flat marking helper
     const mark = (mat, w, l, x, y, z) => {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w, l), mat);
       m.rotation.x = -Math.PI / 2;
@@ -428,137 +382,74 @@ export class RoundaboutGame {
       this.scene.add(m);
     };
 
-    const fullL = ROAD_L + ROAD_VEXT;  // full visual road length
-
-    // ── N/S arm markings ────────────────────────────────────────────────────
-    [-(RB_OUT + fullL / 2), RB_OUT + fullL / 2].forEach(cz => {
-      // White solid centre line — from triangle tip to far end of visual arm
-      const sign       = Math.sign(cz);
-      const lineStart  = sign * (RB_OUT + triLen);
-      const lineEnd    = cz + (fullL / 2) * sign;
-      const lineCenter = (lineStart + lineEnd) / 2;
-      const lineLen    = Math.abs(lineEnd - lineStart);
-      mark(whiteMat, 0.3, lineLen, 0, 0.04, lineCenter);
-
-      // White dashes between same-direction lanes (at x = ±LANE_W = ±3.5)
-      const dashL = 2.5, dashGap = 4.0;
-      for (let d = -(fullL / 2) + 3; d < fullL / 2 - 2; d += dashL + dashGap) {
-        mark(whiteMat, 0.2, dashL, -LANE_W, 0.04, cz + d);
-        mark(whiteMat, 0.2, dashL,  LANE_W, 0.04, cz + d);
-      }
-    });
-
-    // ── E/W arm markings ────────────────────────────────────────────────────
-    [RB_OUT + fullL / 2, -(RB_OUT + fullL / 2)].forEach(cx => {
-      // White solid centre line — from triangle tip to far end of visual arm
-      const sign       = Math.sign(cx);
-      const lineStart  = sign * (RB_OUT + triLen);
-      const lineEnd    = cx + (fullL / 2) * sign;
-      const lineCenter = (lineStart + lineEnd) / 2;
-      const lineLen    = Math.abs(lineEnd - lineStart);
-      mark(whiteMat, lineLen, 0.3, lineCenter, 0.04, 0);
-
-      // White dashes between same-direction lanes (at z = ±LANE_W = ±3.5)
-      const dashL = 2.5, dashGap = 4.0;
-      for (let d = -(fullL / 2) + 3; d < fullL / 2 - 2; d += dashL + dashGap) {
-        mark(whiteMat, dashL, 0.2, cx + d, 0.04, -LANE_W);
-        mark(whiteMat, dashL, 0.2, cx + d, 0.04,  LANE_W);
-      }
-    });
-
-    // ── Give-way dashed double lines at roundabout entries ──────────────────
+    const dashL = 2.5, dashGap = 4.0;
     const gwDash = 1.0, gwGap = 0.65, gwThick = 0.3;
+    this._hatchMat = this._makeHatchMat();
 
-    // South arm entry (z = +RB_OUT): approaching lanes x = -halfW → 0
-    for (let x = -halfW + gwDash / 2; x < 0; x += gwDash + gwGap) {
-      mark(whiteMat, gwDash, gwThick, x, 0.05, RB_OUT + 0.45);
-      mark(whiteMat, gwDash, gwThick, x, 0.05, RB_OUT + 0.9);
-    }
+    const addArmMarkings = (isEW) => {
+      // centre line, dashes, give-way, hatch — applied to N/S (isEW=false) and E/W (isEW=true)
+      const signs = isEW ? [-1, 1] : [1, -1]; // [positive arm, negative arm]
+      signs.forEach(sign => {
+        const lineStart  = RB_OUT + triLen;
+        const lineEnd    = cz + fullL / 2;
+        const lineCenter = (lineStart + lineEnd) / 2;
+        if (isEW) {
+          mark(whiteMat, lineEnd - lineStart, 0.3,  sign * lineCenter, 0.04, 0);
+          for (let d = -(fullL / 2) + 3; d < fullL / 2 - 2; d += dashL + dashGap) {
+            mark(whiteMat, dashL, 0.2,  sign * (cz + d), 0.04, -LANE_W);
+            mark(whiteMat, dashL, 0.2,  sign * (cz + d), 0.04,  LANE_W);
+          }
+          for (let z = -halfW + gwDash / 2; z < 0; z += gwDash + gwGap) {
+            mark(whiteMat, gwThick, gwDash, sign * (RB_OUT + 0.45), 0.05, z);
+            mark(whiteMat, gwThick, gwDash, sign * (RB_OUT + 0.9),  0.05, z);
+          }
+          const tri = new THREE.Mesh(new THREE.PlaneGeometry(triLen, 2.5), this._hatchMat);
+          tri.rotation.x = -Math.PI / 2;
+          tri.position.set(sign * (RB_OUT + triLen / 2), 0.05, 0);
+          this.scene.add(tri);
+        } else {
+          mark(whiteMat, 0.3, lineEnd - lineStart, 0, 0.04, sign * lineCenter);
+          for (let d = -(fullL / 2) + 3; d < fullL / 2 - 2; d += dashL + dashGap) {
+            mark(whiteMat, 0.2, dashL, -LANE_W, 0.04, sign * (cz + d));
+            mark(whiteMat, 0.2, dashL,  LANE_W, 0.04, sign * (cz + d));
+          }
+          for (let x = -halfW + gwDash / 2; x < 0; x += gwDash + gwGap) {
+            mark(whiteMat, gwDash, gwThick, x, 0.05, sign * (RB_OUT + 0.45));
+            mark(whiteMat, gwDash, gwThick, x, 0.05, sign * (RB_OUT + 0.9));
+          }
+          const tri = new THREE.Mesh(new THREE.PlaneGeometry(2.5, triLen), this._hatchMat);
+          tri.rotation.x = -Math.PI / 2;
+          tri.position.set(0, 0.05, sign * (RB_OUT + triLen / 2));
+          this.scene.add(tri);
+        }
+      });
+    };
 
-    // North arm entry (z = -RB_OUT): approaching lanes x = 0 → +halfW
-    for (let x = gwDash / 2; x < halfW; x += gwDash + gwGap) {
-      mark(whiteMat, gwDash, gwThick, x, 0.05, -(RB_OUT + 0.45));
-      mark(whiteMat, gwDash, gwThick, x, 0.05, -(RB_OUT + 0.9));
-    }
+    addArmMarkings(false); // South + North
+    addArmMarkings(true);  // East + West
+  }
 
-    // East arm entry (x = +RB_OUT): approaching lanes z = 0 → +halfW
-    for (let z = gwDash / 2; z < halfW; z += gwDash + gwGap) {
-      mark(whiteMat, gwThick, gwDash, RB_OUT + 0.45, 0.05, z);
-      mark(whiteMat, gwThick, gwDash, RB_OUT + 0.9,  0.05, z);
-    }
-
-    // West arm entry (x = -RB_OUT): approaching lanes z = -halfW → 0
-    for (let z = -halfW + gwDash / 2; z < 0; z += gwDash + gwGap) {
-      mark(whiteMat, gwThick, gwDash, -(RB_OUT + 0.45), 0.05, z);
-      mark(whiteMat, gwThick, gwDash, -(RB_OUT + 0.9),  0.05, z);
-    }
-
-    // ── Hatched give-way triangles ──────────────────────────────────────────
-    // Canvas: triangle with base at top (V=0) and tip at bottom (V=1).
-    // Diagonal white stripes clipped inside the triangle.
+  _makeHatchMat() {
     const HATCH_W = 128, HATCH_H = 256;
-    const hatchCanvas = document.createElement('canvas');
-    hatchCanvas.width  = HATCH_W;
-    hatchCanvas.height = HATCH_H;
-    const hctx = hatchCanvas.getContext('2d');
-
+    const hc = document.createElement('canvas');
+    hc.width = HATCH_W; hc.height = HATCH_H;
+    const hctx = hc.getContext('2d');
     hctx.clearRect(0, 0, HATCH_W, HATCH_H);
     hctx.save();
     hctx.beginPath();
-    hctx.moveTo(0, 0);
-    hctx.lineTo(HATCH_W, 0);
-    hctx.lineTo(HATCH_W / 2, HATCH_H);
-    hctx.closePath();
-    hctx.clip();
-    hctx.strokeStyle = 'white';
-    hctx.lineWidth   = 9;
+    hctx.moveTo(0, 0); hctx.lineTo(HATCH_W, 0); hctx.lineTo(HATCH_W / 2, HATCH_H);
+    hctx.closePath(); hctx.clip();
+    hctx.strokeStyle = 'white'; hctx.lineWidth = 9;
     for (let i = -HATCH_H; i < HATCH_W + HATCH_H; i += 24) {
-      hctx.beginPath();
-      hctx.moveTo(i, 0);
-      hctx.lineTo(i + HATCH_H, HATCH_H);
-      hctx.stroke();
+      hctx.beginPath(); hctx.moveTo(i, 0); hctx.lineTo(i + HATCH_H, HATCH_H); hctx.stroke();
     }
     hctx.restore();
-
-    // White border outline around the triangle
     hctx.beginPath();
-    hctx.moveTo(0, 0);
-    hctx.lineTo(HATCH_W, 0);
-    hctx.lineTo(HATCH_W / 2, HATCH_H);
-    hctx.closePath();
-    hctx.strokeStyle = 'white';
-    hctx.lineWidth   = 10;
-    hctx.lineJoin    = 'miter';
-    hctx.stroke();
-
-    const hatchMat = new THREE.MeshBasicMaterial({
-      map:         new THREE.CanvasTexture(hatchCanvas),
-      transparent: true,
-      depthWrite:  false,
-      alphaTest:   0.01,
-      side:        THREE.DoubleSide,
+    hctx.moveTo(0, 0); hctx.lineTo(HATCH_W, 0); hctx.lineTo(HATCH_W / 2, HATCH_H);
+    hctx.closePath(); hctx.strokeStyle = 'white'; hctx.lineWidth = 10; hctx.lineJoin = 'miter'; hctx.stroke();
+    return new THREE.MeshBasicMaterial({
+      map: new THREE.CanvasTexture(hc), transparent: true, depthWrite: false, alphaTest: 0.01, side: THREE.DoubleSide,
     });
-
-    const triWidth = 2.5;
-    // Each arm: PlaneGeometry(triWidth, triLen) rotated flat.
-    // Rotation.x = -PI/2 maps local Y → world -Z. V=0 (localY=+triLen/2) → world z = -triLen/2 + centerZ.
-    // South arm: V=0 at z=RB_OUT  → center at z = RB_OUT + triLen/2.
-    // North arm: rotation.x = +PI/2 flips Y→Z mapping → V=0 at z=-RB_OUT → center at z = -(RB_OUT+triLen/2).
-    // East arm:  rotation.x=-PI/2, rotation.z=PI/2  → V=0 at x=RB_OUT  → center at x = RB_OUT+triLen/2.
-    // West arm:  rotation.x=-PI/2, rotation.z=-PI/2 → V=0 at x=-RB_OUT → center at x = -(RB_OUT+triLen/2).
-    const addTri = (rx, ry, rz, px, pz) => {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(triWidth, triLen), hatchMat);
-      m.rotation.x = rx;
-      m.rotation.y = ry;
-      m.rotation.z = rz;
-      m.position.set(px, 0.05, pz);
-      this.scene.add(m);
-    };
-
-    addTri(-Math.PI / 2,  0,              0,              0,                          RB_OUT + triLen / 2);   // South
-    addTri(+Math.PI / 2,  0,              0,              0,                         -(RB_OUT + triLen / 2)); // North
-    addTri(-Math.PI / 2,  0,  Math.PI / 2, RB_OUT + triLen / 2,  0);                                         // East
-    addTri(-Math.PI / 2,  0, -Math.PI / 2, -(RB_OUT + triLen / 2), 0);                                       // West
   }
 
   // ── Props: trees, kerbs, lamps ─────────────────────────────────────────────
@@ -574,7 +465,7 @@ export class RoundaboutGame {
       islandPos.push([Math.cos(a) * r, Math.sin(a) * r, 0.7]);
     }
 
-    // Corner trees — clusters in the 4 gaps between road arms (outside the ring)
+    // Corner trees — in the 4 diagonal gaps between fixed arms
     [45, 135, 225, 315].forEach(deg => {
       const base = deg * Math.PI / 180;
       for (let j = -1; j <= 1; j++) {
@@ -584,27 +475,22 @@ export class RoundaboutGame {
       }
     });
 
-    // Road-side trees — stored with side metadata for debug slider
-    // {x, z, s, isEW, sign}  isEW=false → N/S road (offset adjusts x)
-    //                         isEW=true  → E/W road (offset adjusts z)
-    const roadPos = [];
-    // Trees sit between houses (house centres every 14 units from 30–128)
+    // Road-side trees along all 4 fixed arms (world-space positions)
     const treeD = [37, 51, 65, 79, 93, 107, 121];
+    const roadPos = [];
     treeD.forEach(d => {
-      // South / North roads (N-S): offset is in x
       roadPos.push({ x:  treeX, z:  d, s: 1.0, isEW: false, sign:  1 });
       roadPos.push({ x: -treeX, z:  d, s: 1.0, isEW: false, sign: -1 });
       roadPos.push({ x:  treeX, z: -d, s: 1.0, isEW: false, sign:  1 });
       roadPos.push({ x: -treeX, z: -d, s: 1.0, isEW: false, sign: -1 });
-      // East / West roads (E-W): offset is in z
-      roadPos.push({ x:  d, z:  treeX, s: 1.0, isEW: true, sign:  1 });
-      roadPos.push({ x:  d, z: -treeX, s: 1.0, isEW: true, sign: -1 });
-      roadPos.push({ x: -d, z:  treeX, s: 1.0, isEW: true, sign:  1 });
-      roadPos.push({ x: -d, z: -treeX, s: 1.0, isEW: true, sign: -1 });
+      roadPos.push({ x:  d, z:  treeX, s: 1.0, isEW: true,  sign:  1 });
+      roadPos.push({ x:  d, z: -treeX, s: 1.0, isEW: true,  sign: -1 });
+      roadPos.push({ x: -d, z:  treeX, s: 1.0, isEW: true,  sign:  1 });
+      roadPos.push({ x: -d, z: -treeX, s: 1.0, isEW: true,  sign: -1 });
     });
 
     // Load GLB and place all trees
-    loader.load('/trees_low_poly.glb', (gltf) => {
+    loader.load(`${BASE}models/trees_low_poly.glb`, (gltf) => {
       gltf.scene.traverse(child => {
         if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
       });
@@ -614,7 +500,7 @@ export class RoundaboutGame {
       const baseScale = 7 / size.y;
       const yOffset   = -box.min.y * baseScale;
 
-      // Island trees (no refs needed)
+      // Island + corner trees
       islandPos.forEach(([x, z, s]) => {
         const inst = gltf.scene.clone(true);
         inst.scale.setScalar(baseScale * s);
@@ -623,7 +509,7 @@ export class RoundaboutGame {
         this.scene.add(inst);
       });
 
-      // Road-side trees — store refs for debug slider
+      // Road-side trees
       roadPos.forEach(({ x, z, s, isEW, sign }) => {
         const inst = gltf.scene.clone(true);
         inst.scale.setScalar(baseScale * s);
@@ -638,7 +524,7 @@ export class RoundaboutGame {
   }
 
   _buildLamps(loader) {
-    loader.load('/lamp_post.glb', (gltf) => {
+    loader.load(`${BASE}models/lamp_post.glb`, (gltf) => {
       gltf.scene.traverse(child => {
         if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
       });
@@ -662,14 +548,14 @@ export class RoundaboutGame {
       const halfW = ROAD_W / 2;
       const step  = 20;
       for (let d = RB_OUT + 8; d < RB_OUT + ROAD_L - 5; d += step) {
-        addLamp(-halfW - 0.5,  d,  0,            false, -1); // South road, left edge
-        addLamp( halfW + 0.5,  d,  Math.PI,      false,  1); // South road, right edge
-        addLamp(-halfW - 0.5, -d,  0,            false, -1); // North road, left edge
-        addLamp( halfW + 0.5, -d,  Math.PI,      false,  1); // North road, right edge
-        addLamp( d, -halfW - 0.5,  Math.PI / 2,  true,  -1); // East road, near edge
-        addLamp( d,  halfW + 0.5, -Math.PI / 2,  true,   1); // East road, far edge
-        addLamp(-d, -halfW - 0.5,  Math.PI / 2,  true,  -1); // West road, near edge
-        addLamp(-d,  halfW + 0.5, -Math.PI / 2,  true,   1); // West road, far edge
+        addLamp(-halfW - 0.5,  d,  0,            false, -1); // South
+        addLamp( halfW + 0.5,  d,  Math.PI,      false,  1);
+        addLamp(-halfW - 0.5, -d,  0,            false, -1); // North
+        addLamp( halfW + 0.5, -d,  Math.PI,      false,  1);
+        addLamp( d, -halfW - 0.5,  Math.PI / 2,  true,  -1); // East
+        addLamp( d,  halfW + 0.5, -Math.PI / 2,  true,   1);
+        addLamp(-d, -halfW - 0.5,  Math.PI / 2,  true,  -1); // West
+        addLamp(-d,  halfW + 0.5, -Math.PI / 2,  true,   1);
       }
     });
   }
@@ -680,7 +566,7 @@ export class RoundaboutGame {
     this._frontWheelGroups = null;
     this._playerIndMeshes  = { left: [], right: [] };
 
-    loader.load('/car_white.glb', (gltf) => {
+    loader.load(`${BASE}models/car_white.glb`, (gltf) => {
       gltf.scene.traverse(child => {
         if (child.isMesh) { child.castShadow = true; child.receiveShadow = false; }
       });
@@ -802,7 +688,7 @@ export class RoundaboutGame {
     const halfW = ROAD_W / 2;
     const sg    = halfW + 5;
 
-    // ── South road — alternating brick / render pairs ────────────────────────
+    // ── South road ────────────────────────────────────────────────────────────
     [50, 65, 80, 95].forEach((z, i) => {
       const jitter = (Math.random() - 0.5) * 4;
       addHouse( sg + 4 + (i % 2) * 3, z + jitter, 8, 7, 5.5, i,     i % 2);
@@ -818,22 +704,23 @@ export class RoundaboutGame {
 
     // ── East road ─────────────────────────────────────────────────────────────
     [50, 65, 80].forEach((x, i) => {
-      addHouse(x,  sg + 4, 7, 6, 5.0, i + 2, i % 2,       Math.PI / 2);
-      addHouse(x, -sg - 4, 7, 6, 4.5, i + 6, 1 - i % 2,   Math.PI / 2);
+      addHouse(x,  sg + 4, 7, 6, 5.0, i + 2, i % 2,     Math.PI / 2);
+      addHouse(x, -sg - 4, 7, 6, 4.5, i + 6, 1 - i % 2, Math.PI / 2);
     });
 
     // ── West road ─────────────────────────────────────────────────────────────
     [-50, -65, -80].forEach((x, i) => {
-      addHouse(x,  sg + 4, 7, 6, 5.0, i + 4, 1 - i % 2,   Math.PI / 2);
-      addHouse(x, -sg - 4, 7, 6, 4.5, i + 7, i % 2,        Math.PI / 2);
+      addHouse(x,  sg + 4, 7, 6, 5.0, i + 4, 1 - i % 2, Math.PI / 2);
+      addHouse(x, -sg - 4, 7, 6, 4.5, i + 7, i % 2,      Math.PI / 2);
     });
+
   }
 
   _loadBuildings(loader) {
     const loadGLB = (url) => new Promise((resolve, reject) =>
       loader.load(url, resolve, undefined, reject));
 
-    loadGLB('/building.glb').then((gltf) => {
+    loadGLB(`${BASE}models/building.glb`).then((gltf) => {
       gltf.scene.traverse(child => {
         if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
       });
@@ -862,7 +749,7 @@ export class RoundaboutGame {
     }).catch(err => console.error('Building load failed:', err));
 
     // Yield signs — left side of each arm entrance (give-way line)
-    loadGLB('/yield.glb').then((gltf) => {
+    loadGLB(`${BASE}models/yield.glb`).then((gltf) => {
       gltf.scene.traverse(child => {
         if (child.isMesh) { child.castShadow = true; child.receiveShadow = false; }
       });
@@ -883,14 +770,10 @@ export class RoundaboutGame {
       const E = RB_OUT + 1.5;  // just outside give-way line
       const L = ROAD_W / 2 + 0.8; // left edge of road from driver's view
 
-      // South entrance: approaching from +z, left side is -x
-      place(-L,  E,  0);
-      // North entrance: approaching from -z, left side is +x
-      place( L, -E,  Math.PI);
-      // East entrance: approaching from +x, left side is +z
-      place( E,  L,  Math.PI / 2);
-      // West entrance: approaching from -x, left side is -z
-      place(-E, -L, -Math.PI / 2);
+      place(-L,  E,  0);           // South
+      place( L, -E,  Math.PI);    // North
+      place( E,  L,  Math.PI/2);  // East
+      place(-E, -L, -Math.PI/2);  // West
     }).catch(err => console.error('Yield sign load failed:', err));
   }
 
@@ -912,7 +795,7 @@ export class RoundaboutGame {
   }
 
   _buildClouds(loader) {
-    loader.load('/cloud.glb', (gltf) => {
+    loader.load(`${BASE}models/cloud.glb`, (gltf) => {
       gltf.scene.traverse(child => {
         if (child.isMesh) { child.castShadow = false; child.receiveShadow = false; }
       });
@@ -967,8 +850,8 @@ export class RoundaboutGame {
         mesh, indMeshes: { left: [], right: [] },
         state:            'despawned',
         respawnTimer:     i * 2.5,
-        entryArm:         null,
-        exitArm:          null,
+        entryTheta:       SOUTH_THETA,
+        exitTheta:        SOUTH_THETA,
         heading:          0,
         ringAngle:        0,
         ringRadius:       NPC_OUTER_R,
@@ -986,7 +869,7 @@ export class RoundaboutGame {
 
     // Load all NPC car GLBs then populate NPCs
     const loadGLB = (url) => new Promise(resolve => loader.load(url, resolve));
-    Promise.all([loadGLB('/car_blue.glb'), loadGLB('/car_green.glb'), loadGLB('/car_orange.glb'), loadGLB('/car_purple.glb')]).then(([g1, g2, g3, g4]) => {
+    Promise.all([loadGLB(`${BASE}models/car_blue.glb`), loadGLB(`${BASE}models/car_green.glb`), loadGLB(`${BASE}models/car_orange.glb`), loadGLB(`${BASE}models/car_purple.glb`)]).then(([g1, g2, g3, g4]) => {
       // NPC 0=blue, 1=green, 2=orange, 3=purple, 4=blue (cycles)
       const carDefs = [
         { scene: g1.scene, rot: Math.PI, type: 'blue'   },
@@ -1130,82 +1013,68 @@ export class RoundaboutGame {
   }
 
   _spawnNPC(npc) {
-    const TWO_PI    = Math.PI * 2;
-    const entryName = ARM_NAMES[Math.floor(Math.random() * ARM_NAMES.length)];
-    const exitCands = ARM_NAMES.filter(a => a !== entryName);
-    const exitName  = exitCands[Math.floor(Math.random() * exitCands.length)];
-    const entryCfg  = ARM_CFG[entryName];
+    const TWO_PI = Math.PI * 2;
+    // Pick random entry arm, then a different exit arm from all 4
+    const entryIdx  = Math.floor(Math.random() * ALL_ARM_THETAS.length);
+    const entryTheta = ALL_ARM_THETAS[entryIdx];
+    const exitCands  = ALL_ARM_THETAS.filter((_, i) => i !== entryIdx);
+    const exitTheta  = exitCands[Math.floor(Math.random() * exitCands.length)];
+    npc.entryTheta = entryTheta;
+    npc.exitTheta  = exitTheta;
+    // Approach heading = direction toward ring center from outside this arm
+    npc.heading = (entryTheta + Math.PI) % TWO_PI;
 
-    npc.entryArm   = entryName;
-    npc.exitArm    = exitName;
-    npc.heading    = entryCfg.approachHeading;
-
-    // Determine outer/inner lane by first estimating travel angle using outer radius,
-    // then applying the same rules the player must follow:
-    //   exit 1 (~π/2 travel)  → outer approach lane + left indicator
-    //   exit 2 (~π travel)    → either lane, no indicator
-    //   exit 3 (~3π/2 travel) → inner approach lane + right indicator
-    const tempEntry = this._ringIntersect(entryName, NPC_OUTER_R, true, true);
-    const tempExit  = this._ringIntersect(exitName,  NPC_OUTER_R, true, false);
+    // Estimate travel angle to pick outer/inner lane
+    const tempEntry = this._ringIntersect(entryTheta, NPC_OUTER_R, true,  true);
+    const tempExit  = this._ringIntersect(exitTheta,  NPC_OUTER_R, true,  false);
     const tempAdv   = (tempEntry.ringAngle + ENTRY_ADVANCE + TWO_PI) % TWO_PI;
     const tempAdvX  = (tempExit.ringAngle  - EXIT_ADVANCE  + TWO_PI) % TWO_PI;
     let approxTravel = (tempAdvX - tempAdv + TWO_PI) % TWO_PI;
     if (approxTravel < 0.2) approxTravel += TWO_PI;
 
-    const outer = approxTravel < Math.PI * 0.65 ? true          // exit 1: outer lane
-                : approxTravel > Math.PI * 1.35 ? false         // exit 3: inner lane
-                : Math.random() < 0.5;                          // exit 2: either
-
+    const outer = approxTravel < Math.PI * 0.65 ? true
+                : approxTravel > Math.PI * 1.35 ? false
+                : Math.random() < 0.5;
     npc.ringRadius = outer ? NPC_OUTER_R : NPC_INNER_R;
 
-    // Compute lane-specific ring intersection angles so ringTravelNeeded is accurate
-    const entryInt = this._ringIntersect(entryName, npc.ringRadius, outer, true);
-    const exitInt  = this._ringIntersect(exitName,  npc.ringRadius, outer, false);
-    // Advance the effective ring entry/exit angles so bezierArc produces C-curves
+    const entryInt = this._ringIntersect(entryTheta, npc.ringRadius, outer, true);
+    const exitInt  = this._ringIntersect(exitTheta,  npc.ringRadius, outer, false);
     const advEntryAngle = (entryInt.ringAngle + ENTRY_ADVANCE + TWO_PI) % TWO_PI;
     const advExitAngle  = (exitInt.ringAngle  - EXIT_ADVANCE  + TWO_PI) % TWO_PI;
     npc.ringTravelNeeded = (advExitAngle - advEntryAngle + TWO_PI) % TWO_PI;
-    if (npc.ringTravelNeeded < 0.2) npc.ringTravelNeeded += TWO_PI; // safety: avoid near-zero
+    if (npc.ringTravelNeeded < 0.2) npc.ringTravelNeeded += TWO_PI;
     npc.ringTravelDone   = 0;
     npc.state            = 'approaching';
 
-    // Approach indicator mirrors player rules
-    npc.leftIndicator    = approxTravel < Math.PI * 0.65;  // exit 1 → left
-    npc.rightIndicator   = approxTravel > Math.PI * 1.35;  // exit 3 → right
+    npc.leftIndicator    = approxTravel < Math.PI * 0.65;
+    npc.rightIndicator   = approxTravel > Math.PI * 1.35;
     npc.nearExitSignaled = false;
 
-    const [sx, sz] = entryCfg.approachLanePos(outer);
+    // Spawn position on approach lane
+    const spawnDist = RB_OUT + ROAD_L * 0.88; // spawn near far end of arm, well behind player start
+    const wOff = outer ? LANE_W * 1.5 : LANE_W * 0.5;
+    const sx = spawnDist * Math.sin(entryTheta) + wOff * Math.cos(entryTheta);
+    const sz = -spawnDist * Math.cos(entryTheta) + wOff * Math.sin(entryTheta);
     npc.mesh.position.set(sx, 0, sz);
     npc.mesh.rotation.y = -npc.heading;
     npc.mesh.visible    = true;
   }
 
-  // Returns the ring intersection point for an NPC lane on the given arm.
-  // isEntry=true  → approaching lane (NPC enters ring from this arm)
-  // isEntry=false → departure lane  (NPC exits  ring to  this arm)
+  // Returns the ring intersection point for a lane on the arm at ring-angle theta.
+  // isEntry=true  → approaching lane (enters ring from this arm)
+  // isEntry=false → departure lane  (exits  ring to  this arm)
   // Returns { x, z, ringAngle, tangentH }
-  // Ring angle convention: x = r·sin(θ), z = −r·cos(θ), θ = atan2(x, −z)
-  _ringIntersect(arm, r, outer, isEntry) {
-    const TWO_PI = Math.PI * 2;
-    const w = outer ? LANE_W * 1.5 : LANE_W * 0.5; // lane-centre offset from road centre
-    const h = Math.sqrt(r * r - w * w);              // perpendicular distance along ring
-
-    // Each arm's near-side approach lanes and far-side departure lanes:
-    //   south: approach x<0 (west/near-side), depart x>0
-    //   north: approach x>0 (east/near-side), depart x<0
-    //   east:  approach z>0 (south/near-side), depart z<0
-    //   west:  approach z<0 (north/near-side), depart z>0
-    let x, z;
-    switch (arm) {
-      case 'south': x = isEntry ? -w :  w;  z =  h; break; // south side (z > 0)
-      case 'north': x = isEntry ?  w : -w;  z = -h; break; // north side (z < 0)
-      case 'east':  x =  h;  z = isEntry ?  w : -w; break; // east side  (x > 0)
-      case 'west':  x = -h;  z = isEntry ? -w :  w; break; // west side  (x < 0)
-    }
-
+  // Ring angle convention: x = r·sin(θ), z = −r·cos(θ), θ: north=0, east=π/2, south=π, west=3π/2
+  _ringIntersect(theta, r, outer, isEntry) {
+    const TWO_PI   = Math.PI * 2;
+    const w        = outer ? LANE_W * 1.5 : LANE_W * 0.5;
+    const h        = Math.sqrt(r * r - w * w);
+    // w_signed: entry=near-side (+w), exit=far-side (−w)
+    const w_signed = isEntry ? w : -w;
+    const x = h * Math.sin(theta) + w_signed * Math.cos(theta);
+    const z = -h * Math.cos(theta) + w_signed * Math.sin(theta);
     const rawAngle  = Math.atan2(x, -z);
     const ringAngle = ((rawAngle % TWO_PI) + TWO_PI) % TWO_PI;
-    // Tangent heading for CW ring travel at this angle
     const tangentH  = Math.atan2(Math.cos(ringAngle), -Math.sin(ringAngle));
     return { x, z, ringAngle, tangentH };
   }
@@ -1240,7 +1109,7 @@ export class RoundaboutGame {
       const dist = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
       if (dist < RB_OUT + 14) {
         const isOuter    = npc.ringRadius === NPC_OUTER_R;
-        const entryInt   = this._ringIntersect(npc.entryArm, npc.ringRadius, isOuter, true);
+        const entryInt   = this._ringIntersect(npc.entryTheta, npc.ringRadius, isOuter, true);
         const entryAngle = entryInt.ringAngle;
 
         // Yield to the player car only if they are actually on the ring
@@ -1375,7 +1244,7 @@ export class RoundaboutGame {
           // lane–ring intersection, which gives bezierArc a lateral offset large enough
           // to produce a clean C-curve instead of an S-curve.
           const isOuter    = npc.ringRadius === NPC_OUTER_R;
-          const entryInt   = this._ringIntersect(npc.entryArm, npc.ringRadius, isOuter, true);
+          const entryInt   = this._ringIntersect(npc.entryTheta, npc.ringRadius, isOuter, true);
           const advEntryAng = (entryInt.ringAngle + ENTRY_ADVANCE + Math.PI * 2) % (Math.PI * 2);
           const advEntryX  = npc.ringRadius * Math.sin(advEntryAng);
           const advEntryZ  = -npc.ringRadius * Math.cos(advEntryAng);
@@ -1429,15 +1298,15 @@ export class RoundaboutGame {
         if (npc.ringTravelDone >= npc.ringTravelNeeded) {
           // Smooth arc off ring → lane-specific exit intersection + 8 units down exit road
           const isOuter  = npc.ringRadius === NPC_OUTER_R;
-          const exitInt  = this._ringIntersect(npc.exitArm, npc.ringRadius, isOuter, false);
-          const exitCfg  = ARM_CFG[npc.exitArm];
+          const exitInt  = this._ringIntersect(npc.exitTheta, npc.ringRadius, isOuter, false);
+          const dH       = npc.exitTheta; // depart heading: outward along arm at exitTheta
           const fromH    = Math.atan2(Math.cos(npc.ringAngle), -Math.sin(npc.ringAngle));
           npc.transFromX = pos.x;
           npc.transFromZ = pos.z;
           npc.transFromH = fromH;
-          npc.transToX   = exitInt.x + Math.sin(exitCfg.departHeading) * 8;
-          npc.transToZ   = exitInt.z - Math.cos(exitCfg.departHeading) * 8;
-          npc.transToH   = exitCfg.departHeading;
+          npc.transToX   = exitInt.x + Math.sin(dH) * 8;
+          npc.transToZ   = exitInt.z - Math.cos(dH) * 8;
+          npc.transToH   = dH;
           npc.transDuration = bezierArcLen(
             npc.transFromX, npc.transFromZ, npc.transFromH,
             npc.transToX,   npc.transToZ,   npc.transToH,
@@ -1474,7 +1343,8 @@ export class RoundaboutGame {
         pos.z -= Math.cos(npc.heading) * npc.speed * dtScale;
         npc.mesh.rotation.y = -npc.heading;
 
-        if (ARM_CFG[npc.exitArm].despawnCheck(pos)) {
+        const radial = pos.x * Math.sin(npc.exitTheta) + pos.z * (-Math.cos(npc.exitTheta));
+        if (radial > RB_OUT + ROAD_L - 5) {
           npc.mesh.visible = false;
           npc.state        = 'despawned';
           npc.respawnTimer = 3 + Math.random() * 3;
@@ -1773,8 +1643,14 @@ export class RoundaboutGame {
 
   // ── Mission assignment ─────────────────────────────────────────────────────
   _assignMission() {
-    const exit = EXITS[this._missionIndex % EXITS.length];
-    this.car.targetExit       = exit.name;
+    let idx;
+    do { idx = Math.floor(Math.random() * EXITS.length); }
+    while (EXITS.length > 1 && idx === this._lastExitIndex);
+    this._lastExitIndex = idx;
+
+    const exit = EXITS[idx];
+    this._exitTheta = exit.theta;
+
     this.car.targetExitNum    = exit.num;
     this.car.exitTravelTarget = exit.travelAngle;
     this.car.requiredLane     = exit.requiredLane;
@@ -1809,9 +1685,10 @@ export class RoundaboutGame {
   releaseKey(code)       { this.keys.delete(code); }
   triggerIndicator(side) { if (!this._preview) this._toggleIndicator(side); }
 
-  // ── Advance to next mission after a successful exit ─────────────────────────
+  // ── Advance to next mission (called from React on "Next" button press) ──────
   nextMission() {
     this._missionIndex++;
+    this._completeTimer = 0;
     this.restart();
   }
 
@@ -1831,6 +1708,16 @@ export class RoundaboutGame {
 
   // ── Restart (full reset + new mission) ─────────────────────────────────────
   restart() {
+    // Reset all NPCs so they respawn on the updated arms
+    this.npcs?.forEach(npc => {
+      npc.state        = 'despawned';
+      npc.respawnTimer = 2 + Math.random() * 4;
+      npc.mesh.visible = false;
+      if (npc.indMeshes) {
+        [...npc.indMeshes.left, ...npc.indMeshes.right].forEach(m => { m.visible = false; });
+      }
+    });
+
     const car = this.car;
     car.pos.set(-LANE_W * 1.5, 0, RB_OUT + ROAD_L * 0.55);
     car.heading       = 0;
@@ -1871,12 +1758,15 @@ export class RoundaboutGame {
     // outer lane edge (|x|=7) the ring boundary is ~1.1 units inside RB_OUT,
     // so an 8-unit overlap gives plenty of margin with no gameplay side-effects.
     const ARM_OVERLAP = 1.5;
+    // Generalised exit-arm projection (works for any fixed theta)
+    const exitRadial  = car.pos.x * Math.sin(this._exitTheta) + car.pos.z * (-Math.cos(this._exitTheta));
+    const exitLateral = Math.abs(car.pos.x * Math.cos(this._exitTheta) + car.pos.z * Math.sin(this._exitTheta));
     const onRoad = (
-      (dist > RB_IN && dist < RB_OUT) ||                                                                          // ring
-      (Math.abs(car.pos.x) < ROAD_W / 2 && car.pos.z >  RB_OUT - ARM_OVERLAP && car.pos.z <  RB_OUT + ROAD_L) || // S arm
-      (Math.abs(car.pos.x) < ROAD_W / 2 && car.pos.z < -RB_OUT + ARM_OVERLAP && car.pos.z > -(RB_OUT + ROAD_L)) || // N arm
-      (Math.abs(car.pos.z) < ROAD_W / 2 && car.pos.x >  RB_OUT - ARM_OVERLAP && car.pos.x <  RB_OUT + ROAD_L) || // E arm
-      (Math.abs(car.pos.z) < ROAD_W / 2 && car.pos.x < -RB_OUT + ARM_OVERLAP && car.pos.x > -(RB_OUT + ROAD_L))  // W arm
+      (dist > RB_IN && dist < RB_OUT) ||
+      (Math.abs(car.pos.x) < ROAD_W / 2 && car.pos.z >  RB_OUT - ARM_OVERLAP && car.pos.z <  RB_OUT + ROAD_L) || // S
+      (Math.abs(car.pos.x) < ROAD_W / 2 && car.pos.z < -RB_OUT + ARM_OVERLAP && car.pos.z > -(RB_OUT + ROAD_L)) || // N
+      (Math.abs(car.pos.z) < ROAD_W / 2 && car.pos.x >  RB_OUT - ARM_OVERLAP && car.pos.x <  RB_OUT + ROAD_L) || // E
+      (Math.abs(car.pos.z) < ROAD_W / 2 && car.pos.x < -RB_OUT + ARM_OVERLAP && car.pos.x > -(RB_OUT + ROAD_L))  // W
     );
     if (!onRoad) {
       car.failed    = true;
@@ -1898,6 +1788,8 @@ export class RoundaboutGame {
 
     // ── Universal condition checker ────────────────────────────────────────
     // Handles indicator types ('left','right','none') and lane types.
+    // laneProj = signed perpendicular position along exit arm (>0 = near-side = left lane)
+    const laneProj = -(car.pos.x * Math.cos(this._exitTheta) + car.pos.z * Math.sin(this._exitTheta));
     const condOk = req =>
       req === 'left'           ? car.leftIndicator :
       req === 'right'          ? car.rightIndicator :
@@ -1906,8 +1798,8 @@ export class RoundaboutGame {
       req === 'approach_inner' ? (car.pos.x >= -LANE_W && car.pos.x < 0) :
       req === 'ring_outer'     ? dist > RB_MID :
       req === 'ring_inner'     ? dist < RB_MID :
-      req === 'exit_left'      ? (car.targetExitNum === 1 ? car.pos.z > LANE_W : car.pos.x < -LANE_W) :
-      req === 'exit_right'     ? (car.targetExitNum === 2 ? car.pos.x > -LANE_W : car.pos.z > -LANE_W) :
+      req === 'exit_left'      ? laneProj > LANE_W :
+      req === 'exit_right'     ? laneProj < LANE_W :
       req === 'signal'         ? (car.leftIndicator || car.rightIndicator) :
       true;
 
@@ -2034,15 +1926,8 @@ export class RoundaboutGame {
       }
       this._prevDistFromCenter = dist;
 
-      // ── Phase transition: angle-based OR physically on the correct exit arm ─
-      // traveledAngle can stop accumulating once the car leaves the ring road,
-      // so also check whether the car has physically crossed RB_OUT onto the
-      // correct arm road (west/north/east — player always enters from south).
-      const onExitArm = (
-        (car.targetExit === 'west'  && car.pos.x < -RB_OUT && Math.abs(car.pos.z) < ROAD_W / 2) ||
-        (car.targetExit === 'north' && car.pos.z < -RB_OUT && Math.abs(car.pos.x) < ROAD_W / 2) ||
-        (car.targetExit === 'east'  && car.pos.x >  RB_OUT && Math.abs(car.pos.z) < ROAD_W / 2)
-      );
+      // ── Phase transition: angle-based OR physically on the exit arm ──────────
+      const onExitArm = exitLateral < ROAD_W / 2 && exitRadial > RB_OUT;
       if (onExitArm) car.graceActive = false;  // clear ring/indicator graces once on correct arm
       if (car.traveledAngle >= car.exitTravelTarget - 0.15 || onExitArm) {
         car.phase = 'exiting';
@@ -2050,25 +1935,21 @@ export class RoundaboutGame {
 
     // ── Phase: exiting ─────────────────────────────────────────────────────
     } else if (car.phase === 'exiting') {
-      // Exit 1 (west): must be in left lane from POV (z > LANE_W) on the exit arm.
-      if (car.targetExitNum === 1 && !this._checkExitLaneDone && car.pos.x < -(RB_OUT + 2)) {
+      // Timed exit-lane check — fires at RB_OUT+2 for exits 1/2, RB_OUT+6 for exit 3
+      const exitTrigger = car.targetExitNum === 3 ? RB_OUT + 6 : RB_OUT + 2;
+      if (!this._checkExitLaneDone && exitRadial > exitTrigger) {
         this._checkExitLaneDone = true;
-        if (!condOk('exit_left')) startGrace('exit_left', 3.0);
+        if (car.targetExitNum === 1) {
+          if (!condOk('exit_left'))  startGrace('exit_left',  3.0);
+        } else if (car.targetExitNum === 2) {
+          const req2 = car.approachLane === 'outer' ? 'exit_left' : 'exit_right';
+          if (!condOk(req2)) startGrace(req2, 3.0);
+        } else {
+          if (!condOk('exit_right')) startGrace('exit_right', 3.0);
+        }
       }
-      // Exit 2 (north): match approach lane — outer approach exits left, inner approach exits right.
-      if (car.targetExitNum === 2 && !this._checkExitLaneDone && car.pos.z < -(RB_OUT + 2)) {
-        this._checkExitLaneDone = true;
-        const req2 = car.approachLane === 'outer' ? 'exit_left' : 'exit_right';
-        if (!condOk(req2)) startGrace(req2, 3.0);
-      }
-      // Exit 3 (east): must be in right lane from POV (z > LANE_W) on the exit arm.
-      // Check fires later (RB_OUT + 6) to give the car time to move into position after leaving the ring.
-      if (car.targetExitNum === 3 && !this._checkExitLaneDone && car.pos.x > RB_OUT + 6) {
-        this._checkExitLaneDone = true;
-        if (!condOk('exit_right')) startGrace('exit_right', 3.0);
-      }
-      if (dist >= RB_OUT + 8) {
-        // Final hard check for all exits — fail if still in wrong lane at completion
+      if (exitRadial >= RB_OUT + 8) {
+        // Final hard check — fail if still in wrong lane
         const exitReq = (car.targetExitNum === 1 || (car.targetExitNum === 2 && car.approachLane === 'outer')) ? 'exit_left' : 'exit_right';
         if (!condOk(exitReq)) {
           car.failed      = true;
@@ -2077,7 +1958,7 @@ export class RoundaboutGame {
           return;
         }
         car.phase = 'completed';
-        this._completeTimer = 2.0;
+        this._completeTimer = 1;
       }
     }
   }
@@ -2187,16 +2068,9 @@ export class RoundaboutGame {
       this._frontWheelGroups.forEach(pivot => { pivot.rotation.y = -car.steer * 0.42; });
     }
 
-    // ── Complete-mission countdown ────────────────────────────────────────────
-    if (this._completeTimer > 0) {
-      this._completeTimer -= dt;
-      if (this._completeTimer <= 0) {
-        this._completeTimer = 0;
-        this._missionIndex++;
-        this.restart();
-        return;
-      }
-    }
+    // ── Complete-mission: wait for player to tap "Next" ──────────────────────
+    // _completeTimer is set to 1 when phase=completed; counts up to track display time.
+    // Actual advance happens via nextMission() called from React on button press.
 
     const kmh = Math.round((spd / MAX_SPEED) * 80);
     this.onHUD?.({
@@ -2206,7 +2080,6 @@ export class RoundaboutGame {
       steer:          car.steer,
       phase:          car.phase,
       showComplete:   this._completeTimer > 0,
-      targetExit:     car.targetExit,
       targetExitNum:  car.targetExitNum,
       requiredLane:   car.requiredLane,
       leftIndicator:  car.leftIndicator,
