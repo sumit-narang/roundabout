@@ -173,7 +173,7 @@ export class RoundaboutGame3arm {
     this._onKeyDown = e => {
       if (this._preview) return;
       this.keys.add(e.code);
-      if (e.code.startsWith('Arrow')) e.preventDefault();
+      if (e.code.startsWith('Arrow') || ['KeyW','KeyA','KeyS','KeyD'].includes(e.code)) e.preventDefault();
       if (e.code === 'KeyQ') this._toggleIndicator('left');
       if (e.code === 'KeyE') this._toggleIndicator('right');
     };
@@ -1498,13 +1498,13 @@ export class RoundaboutGame3arm {
 
     const car = this.car;
 
-    if      (this.keys.has('ArrowLeft'))  car.steer = Math.max(car.steer - 0.13 * dtScale, -1);
-    else if (this.keys.has('ArrowRight')) car.steer = Math.min(car.steer + 0.13 * dtScale,  1);
-    else                                  car.steer *= Math.pow(0.88, dtScale);
+    if      (this.keys.has('ArrowLeft')  || this.keys.has('KeyA')) car.steer = Math.max(car.steer - 0.13 * dtScale, -1);
+    else if (this.keys.has('ArrowRight') || this.keys.has('KeyD')) car.steer = Math.min(car.steer + 0.13 * dtScale,  1);
+    else                                                            car.steer *= Math.pow(0.88, dtScale);
 
-    if (this.keys.has('ArrowUp')) {
+    if (this.keys.has('ArrowUp') || this.keys.has('KeyW')) {
       car.speed += ACCEL * dtScale;
-    } else if (this.keys.has('ArrowDown')) {
+    } else if (this.keys.has('ArrowDown') || this.keys.has('KeyS')) {
       car.speed = car.speed > 0.01 ? car.speed - BRAKE * dtScale : car.speed - ACCEL * 0.5 * dtScale;
     } else {
       car.speed *= Math.pow(FRICTION, dtScale);

@@ -87,7 +87,7 @@ const GRACE_MSG = {
   exit_left:      'Move to left lane',
 };
 
-export default function Game() {
+export default function Game({ onMissionComplete, autoStart = false }) {
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
   const [hud, setHud] = useState({
@@ -113,6 +113,7 @@ export default function Game() {
   useEffect(() => {
     const engine = new RoundaboutGame(canvasRef.current, setHud);
     engineRef.current = engine;
+    if (autoStart) { engine.startGame(); setStarted(true); }
     return () => engine.destroy();
   }, []);
 
@@ -272,10 +273,10 @@ export default function Game() {
             <div className="result-overlay">
               <SquircleBox className="result-panel result-win">
                 <div className="result-title">WELL DONE!</div>
-                <div className="result-msg">Roundabout mastered!</div>
+                <div className="result-msg">Good job completing the roundabout</div>
                 <SquircleBox as="button"
                   className="start-btn"
-                  onClick={() => { haptic(25); engineRef.current?.nextMission(); }}
+                  onClick={() => { haptic(25); onMissionComplete(); }}
                 >
                   Next Mission
                 </SquircleBox>
