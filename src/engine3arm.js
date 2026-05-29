@@ -1318,7 +1318,7 @@ export class RoundaboutGame3arm {
       car.failed     = true;
       car.failReason = dist < RB_IN
         ? 'You drove into the central island. Stay focused next time!'
-        : "That's grass, not asphalt. Stay on the road.";
+        : "Stay within the road markings.";
       return;
     }
 
@@ -1362,7 +1362,7 @@ export class RoundaboutGame3arm {
         car.graceActive = false;
         const indViolations = ['left', 'right', 'none'];
         car.failReason = indViolations.includes(car.graceRequired)
-          ? "No signal? Other drivers can't read your mind."
+          ? "Use your indicator to let others know your intention."
           : 'You didn\'t move into the correct lane in time.';
         return;
       }
@@ -1498,15 +1498,20 @@ export class RoundaboutGame3arm {
 
     const car = this.car;
 
-    if      (this.keys.has('ArrowLeft')  || this.keys.has('KeyA')) car.steer = Math.max(car.steer - 0.13 * dtScale, -1);
-    else if (this.keys.has('ArrowRight') || this.keys.has('KeyD')) car.steer = Math.min(car.steer + 0.13 * dtScale,  1);
-    else                                                            car.steer *= Math.pow(0.88, dtScale);
+    if (!this._playerPaused) {
+      if      (this.keys.has('ArrowLeft')  || this.keys.has('KeyA')) car.steer = Math.max(car.steer - 0.13 * dtScale, -1);
+      else if (this.keys.has('ArrowRight') || this.keys.has('KeyD')) car.steer = Math.min(car.steer + 0.13 * dtScale,  1);
+      else                                                            car.steer *= Math.pow(0.88, dtScale);
 
-    if (this.keys.has('ArrowUp') || this.keys.has('KeyW')) {
-      car.speed += ACCEL * dtScale;
-    } else if (this.keys.has('ArrowDown') || this.keys.has('KeyS')) {
-      car.speed = car.speed > 0.01 ? car.speed - BRAKE * dtScale : car.speed - ACCEL * 0.5 * dtScale;
+      if (this.keys.has('ArrowUp') || this.keys.has('KeyW')) {
+        car.speed += ACCEL * dtScale;
+      } else if (this.keys.has('ArrowDown') || this.keys.has('KeyS')) {
+        car.speed = car.speed > 0.01 ? car.speed - BRAKE * dtScale : car.speed - ACCEL * 0.5 * dtScale;
+      } else {
+        car.speed *= Math.pow(FRICTION, dtScale);
+      }
     } else {
+      car.steer *= Math.pow(0.88, dtScale);
       car.speed *= Math.pow(FRICTION, dtScale);
     }
     car.speed = Math.max(-MAX_REV, Math.min(MAX_SPEED, car.speed));
@@ -1524,7 +1529,7 @@ export class RoundaboutGame3arm {
     this._prevBlinkOn  = this._blinkOn;
     this._blinkTimer  += dt;
     this._blinkOn = Math.floor(this._blinkTimer * 3) % 2 === 0;
-    if (this._prevBlinkOn !== this._blinkOn && (car.leftIndicator || car.rightIndicator)) {
+    if (!this._playerPaused && this._prevBlinkOn !== this._blinkOn && (car.leftIndicator || car.rightIndicator)) {
       this._playIndicatorClick();
     }
 
@@ -1575,9 +1580,13 @@ export class RoundaboutGame3arm {
     });
   }
 
+  pausePlayer()  { this._playerPaused = true;  }
+  resumePlayer() { this._playerPaused = false; }
+
   // ── Loop ───────────────────────────────────────────────────────────────────
   start() {
     this.running = true;
+    this._playerPaused = false;
     const loop = () => {
       if (!this.running) return;
       this._animId = requestAnimationFrame(loop);

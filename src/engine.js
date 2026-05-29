@@ -2036,7 +2036,7 @@ export class RoundaboutGame {
     this._blinkTimer  += dt;
     this._blinkOn = Math.floor(this._blinkTimer * 3) % 2 === 0;
     // Play click on every edge (on→off and off→on) while player indicator is active
-    if (this._prevBlinkOn !== this._blinkOn && (car.leftIndicator || car.rightIndicator)) {
+    if (!this._playerPaused && this._prevBlinkOn !== this._blinkOn && (car.leftIndicator || car.rightIndicator)) {
       this._playIndicatorClick();
     }
 

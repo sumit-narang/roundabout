@@ -148,7 +148,7 @@ kbd img {
 kbd.key-qe {
   font-family: 'Inter', system-ui, sans-serif;
   font-size: 20px;
-  font-weight: 300;
+  font-weight: 600;
   letter-spacing: 0.02em;
   color: rgba(255, 255, 255, 0.7);
 }
@@ -293,16 +293,22 @@ kbd.key-qe {
 }
 
 .ind-arrow {
-  font-size: 1.6rem;
-  color: rgba(255, 255, 255, 0.12);
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.ind-left { transform: scaleX(-1); }
+.ind-arrow svg {
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
 
 .ind-arrow.on {
-  color: #f0a000;
-  text-shadow: 0 0 14px rgba(240, 160, 0, 0.9);
+  animation: blink 0.667s step-start infinite;
+}
+
+.touch-ind-btn.on svg {
   animation: blink 0.667s step-start infinite;
 }
 
@@ -467,6 +473,15 @@ kbd.key-qe {
   user-select: none;
   -webkit-user-drag: none;
   -webkit-user-select: none;
+}
+
+.touch-ind-btn svg {
+  width: 24px;
+  height: 24px;
+}
+
+.touch-ind-btn.on img {
+  animation: blink 0.667s step-start infinite;
 }
 
 .touch-ind-btn {

@@ -58,6 +58,17 @@ function SquircleBox({ as: Tag = 'div', r = SQ_R, n = SQ_N, disabled = false, cl
 
 const BASE = import.meta.env.BASE_URL;
 
+const IndLeft  = ({ fill, glow }) => (
+  <svg width="22" height="22" viewBox="0 0 66 63" style={{ display: 'block', filter: glow ? `drop-shadow(0 0 6px ${glow})` : 'none' }}>
+    <path d="M50 0.000799179C39.883 0.000799179 27.484 3.407 17.633 8.8914C6.262 15.2273 0 23.1644 0 31.2504C0 39.3324 6.2617 47.2734 17.633 53.6094C27.4846 59.0938 39.883 62.5 50 62.5C58.7617 62.5 65.625 48.773 65.625 31.25C65.625 13.727 58.7617 0.000799179 50 0.000799179Z" fill={fill} />
+  </svg>
+);
+const IndRight = ({ fill, glow }) => (
+  <svg width="22" height="22" viewBox="0 0 66 63" style={{ display: 'block', filter: glow ? `drop-shadow(0 0 6px ${glow})` : 'none' }}>
+    <path d="M15.625 0.000799179C25.742 0.000799179 38.141 3.407 47.992 8.8914C59.363 15.2273 65.625 23.1644 65.625 31.2504C65.625 39.3324 59.3633 47.2734 47.992 53.6094C38.1404 59.0938 25.742 62.5 15.625 62.5C6.8633 62.5 0 48.773 0 31.25C0 13.727 6.8633 0.000799179 15.625 0.000799179Z" fill={fill} />
+  </svg>
+);
+
 const ArrowKey = ({ deg = 0 }) => (
   <SquircleBox as="kbd" r={10}>
     <img
@@ -87,7 +98,7 @@ const GRACE_MSG = {
   exit_left:      'Move to left lane',
 };
 
-export default function Game({ onMissionComplete, autoStart = false }) {
+export default function Game({ onMissionComplete, autoStart = false, initialMuted = false, onMuteChange }) {
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
   const [hud, setHud] = useState({
@@ -99,11 +110,15 @@ export default function Game({ onMissionComplete, autoStart = false }) {
     failed: false, failReason: null, showComplete: false, missionIndex: 0,
   });
   const [started,        setStarted]        = useState(false);
-  const [muted,          setMuted]          = useState(false);
+  const [muted,          setMuted]          = useState(initialMuted);
   const [btnHovered,     setBtnHovered]     = useState(false);
   const [retryHovered,   setRetryHovered]   = useState(false);
   const [showIndHint,    setShowIndHint]    = useState(false);
   const indHintTimer = useRef(null);
+  const indActiveColor = '#FF9500';
+  const indGlow        = 'rgba(255,149,0,0.9)';
+  const indOffColor      = 'rgba(255,255,255,0.35)';
+  const indOffColorTouch = 'rgba(255,255,255,0.7)';
   const glowStyle = hovered => ({
     boxShadow: hovered ? '0 0 16px 0px rgba(240,144,48,0.13), 0 0 78px 12px rgba(240,144,48,0.25)' : 'none',
   });
@@ -113,6 +128,7 @@ export default function Game({ onMissionComplete, autoStart = false }) {
   useEffect(() => {
     const engine = new RoundaboutGame(canvasRef.current, setHud);
     engineRef.current = engine;
+    if (initialMuted) engine.toggleMute();
     if (autoStart) { engine.startGame(); setStarted(true); }
     return () => engine.destroy();
   }, []);
@@ -238,8 +254,8 @@ export default function Game({ onMissionComplete, autoStart = false }) {
             <div className="top-hud-divider" />
 
             <div className="top-hud-indicators">
-              <div className={`ind-arrow ind-left${hud.leftIndicator ? ' on' : ''}`}>▶</div>
-              <div className={`ind-arrow ind-right${hud.rightIndicator ? ' on' : ''}`}>▶</div>
+              <div className={`ind-arrow ind-left${hud.leftIndicator ? ' on' : ''}`}><IndLeft  fill={hud.leftIndicator  ? indActiveColor : indOffColor} glow={hud.leftIndicator  ? indGlow : null} /></div>
+              <div className={`ind-arrow ind-right${hud.rightIndicator ? ' on' : ''}`}><IndRight fill={hud.rightIndicator ? indActiveColor : indOffColor} glow={hud.rightIndicator ? indGlow : null} /></div>
             </div>
           </SquircleBox>
 
@@ -303,7 +319,7 @@ export default function Game({ onMissionComplete, autoStart = false }) {
           {/* Sound toggle */}
           <button
             className="sound-btn"
-            onClick={() => setMuted(engineRef.current?.toggleMute() ?? false)}
+            onClick={() => { const m = engineRef.current?.toggleMute() ?? false; setMuted(m); onMuteChange?.(m); }}
             onMouseDown={e => e.currentTarget.blur()}
           >
             <img src={muted ? `${BASE}icons/soundOFF.svg` : `${BASE}icons/soundON.svg`} alt={muted ? 'Unmute' : 'Mute'} draggable="false" />
@@ -313,8 +329,8 @@ export default function Game({ onMissionComplete, autoStart = false }) {
           <div className="touch-controls">
             {/* Left: indicator buttons */}
             <div className="touch-inds">
-              <SquircleBox as="button" className="touch-btn touch-ind-btn" onPointerDown={() => { haptic(12); engineRef.current?.triggerIndicator('left'); }}>◀</SquircleBox>
-              <SquircleBox as="button" className="touch-btn touch-ind-btn" onPointerDown={() => { haptic(12); engineRef.current?.triggerIndicator('right'); }}>▶</SquircleBox>
+              <SquircleBox as="button" className={`touch-btn touch-ind-btn${hud.leftIndicator ? ' on' : ''}`} onPointerDown={() => { haptic(12); engineRef.current?.triggerIndicator('left'); }}><IndLeft  fill={hud.leftIndicator  ? indActiveColor : indOffColorTouch} glow={hud.leftIndicator  ? indGlow : null} /></SquircleBox>
+              <SquircleBox as="button" className={`touch-btn touch-ind-btn${hud.rightIndicator ? ' on' : ''}`} onPointerDown={() => { haptic(12); engineRef.current?.triggerIndicator('right'); }}><IndRight fill={hud.rightIndicator ? indActiveColor : indOffColorTouch} glow={hud.rightIndicator ? indGlow : null} /></SquircleBox>
             </div>
             {/* Right: D-pad — top row: up; bottom row: left down right */}
             <div className="touch-dpad">
