@@ -1770,7 +1770,7 @@ export class RoundaboutGame {
     );
     if (!onRoad) {
       car.failed    = true;
-      car.failReason = dist < RB_IN ? 'You drove into the central island. Stay focused next time!' : "That's grass, not asphalt. Stay on the road.";
+      car.failReason = dist < RB_IN ? 'You drove into the central island. Stay focused next time!' : "Stay within the road markings.";
       return;
     }
 
@@ -1817,7 +1817,7 @@ export class RoundaboutGame {
           : car.graceRequired === 'exit_left'
             ? "Maintain lane position when exiting."
           : indViolations.includes(car.graceRequired)
-            ? "No signal? Other drivers can't read your mind."
+            ? "Use your indicator to let others know your intention."
             : 'You didn\'t move into the correct lane in time.';
         return;
       }
