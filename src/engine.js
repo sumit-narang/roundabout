@@ -2003,15 +2003,20 @@ export class RoundaboutGame {
 
     const car = this.car;
 
-    if      (this.keys.has('ArrowLeft')  || this.keys.has('KeyA')) car.steer = Math.max(car.steer - 0.13 * dtScale, -1);
-    else if (this.keys.has('ArrowRight') || this.keys.has('KeyD')) car.steer = Math.min(car.steer + 0.13 * dtScale,  1);
-    else                                                            car.steer *= Math.pow(0.88, dtScale);
+    if (!this._playerPaused) {
+      if      (this.keys.has('ArrowLeft')  || this.keys.has('KeyA')) car.steer = Math.max(car.steer - 0.13 * dtScale, -1);
+      else if (this.keys.has('ArrowRight') || this.keys.has('KeyD')) car.steer = Math.min(car.steer + 0.13 * dtScale,  1);
+      else                                                            car.steer *= Math.pow(0.88, dtScale);
 
-    if (this.keys.has('ArrowUp') || this.keys.has('KeyW')) {
-      car.speed += ACCEL * dtScale;
-    } else if (this.keys.has('ArrowDown') || this.keys.has('KeyS')) {
-      car.speed  = car.speed > 0.01 ? car.speed - BRAKE * dtScale : car.speed - ACCEL * 0.5 * dtScale;
+      if (this.keys.has('ArrowUp') || this.keys.has('KeyW')) {
+        car.speed += ACCEL * dtScale;
+      } else if (this.keys.has('ArrowDown') || this.keys.has('KeyS')) {
+        car.speed  = car.speed > 0.01 ? car.speed - BRAKE * dtScale : car.speed - ACCEL * 0.5 * dtScale;
+      } else {
+        car.speed *= Math.pow(FRICTION, dtScale);
+      }
     } else {
+      car.steer *= Math.pow(0.88, dtScale);
       car.speed *= Math.pow(FRICTION, dtScale);
     }
     car.speed = Math.max(-MAX_REV, Math.min(MAX_SPEED, car.speed));
@@ -2095,9 +2100,13 @@ export class RoundaboutGame {
     });
   }
 
+  pausePlayer()  { this._playerPaused = true;  }
+  resumePlayer() { this._playerPaused = false; }
+
   // ── Loop ───────────────────────────────────────────────────────────────────
   start() {
     this.running = true;
+    this._playerPaused = false;
     const loop = () => {
       if (!this.running) return;
       this._animId = requestAnimationFrame(loop);

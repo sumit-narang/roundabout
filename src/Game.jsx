@@ -128,6 +128,14 @@ export default function Game({ onMissionComplete, autoStart = false }) {
   useEffect(() => { if (hud.failed)        haptic([60, 40, 100]); },      [hud.failed]);
   useEffect(() => { if (hud.showComplete)  haptic([40, 20, 40, 20, 80]); }, [hud.showComplete]);
 
+  useEffect(() => {
+    if (hud.failed || hud.showComplete) {
+      engineRef.current?.pausePlayer();
+    } else {
+      engineRef.current?.resumePlayer();
+    }
+  }, [hud.failed, hud.showComplete]);
+
   const renderSpeedo = () => {
     const cx = 40, cy = 40, r = 30;
     const sw = speedCfg.strokeWidth;
@@ -160,7 +168,7 @@ export default function Game({ onMissionComplete, autoStart = false }) {
   };
 
   return (
-    <div className="game-wrap">
+    <div className={`game-wrap${(hud.failed || hud.showComplete) ? ' modal-open' : ''}`}>
       <canvas ref={canvasRef} className="game-canvas" />
 
       {/* ── Start screen ── */}
@@ -205,7 +213,7 @@ export default function Game({ onMissionComplete, autoStart = false }) {
       {started && (
         <>
           {/* Top HUD card — speed + mission info */}
-          <SquircleBox className="top-hud">
+          <SquircleBox className="top-hud" style={{ display: (hud.failed || hud.showComplete) ? 'none' : undefined }}>
             <div className="top-hud-speed">
               {renderSpeedo()}
             </div>
@@ -257,7 +265,7 @@ export default function Game({ onMissionComplete, autoStart = false }) {
                 <div className="result-msg">{hud.failReason}</div>
                 <SquircleBox as="button"
                   className="start-btn"
-                  onClick={() => engineRef.current?.restart()}
+                  onClick={() => { engineRef.current?.resumePlayer(); engineRef.current?.restart(); }}
                   onMouseEnter={() => setRetryHovered(true)}
                   onMouseLeave={() => setRetryHovered(false)}
                   style={glowStyle(retryHovered)}
@@ -276,7 +284,7 @@ export default function Game({ onMissionComplete, autoStart = false }) {
                 <div className="result-msg">Good job completing the roundabout</div>
                 <SquircleBox as="button"
                   className="start-btn"
-                  onClick={() => { haptic(25); onMissionComplete(); }}
+                  onClick={() => { haptic(25); engineRef.current?.resumePlayer(); onMissionComplete(); }}
                 >
                   Next Mission
                 </SquircleBox>

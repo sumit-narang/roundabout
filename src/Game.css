@@ -526,6 +526,14 @@ kbd.key-qe {
   /* Stack refresh (top) + sound (below) on the right, 120px above the D-pad up-arrow */
   .refresh-btn { top: auto; bottom: 330px; right: 16px; }
   .sound-btn   { top: auto; bottom: 280px; right: 16px; }
+
+}
+
+/* When result modal is showing on mobile — hide touch controls, reset button positions */
+@media (max-width: 600px) {
+  .modal-open .touch-controls { display: none; }
+  .modal-open .refresh-btn { top: auto; bottom: 18px; right: 68px; }
+  .modal-open .sound-btn   { top: auto; bottom: 18px; right: 18px; }
 }
 
 /* ── Indicator hint below banner ────────────────────────── */
