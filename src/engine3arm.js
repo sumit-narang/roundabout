@@ -1309,10 +1309,14 @@ export class RoundaboutGame3arm {
 
     // ── Off-road check: generalised for any arm theta ──────────────────────
     const ARM_OVERLAP = 1.5;
+    const C  = LANE_W;       // corner buffer half-size (3.5 units)
+    const hw = ROAD_W / 2;   // arm half-width (7)
     const onRoad = (dist > RB_IN && dist < RB_OUT) || ALL_ARM_THETAS.some(theta => {
       const radial  = car.pos.x * Math.sin(theta) + car.pos.z * (-Math.cos(theta));
       const lateral = Math.abs(car.pos.x * Math.cos(theta) + car.pos.z * Math.sin(theta));
-      return radial > RB_OUT - ARM_OVERLAP && radial < RB_OUT + ROAD_L && lateral < ROAD_W / 2;
+      const onArm    = radial > RB_OUT - ARM_OVERLAP && radial < RB_OUT + ROAD_L && lateral < hw;
+      const onCorner = Math.abs(radial - RB_OUT) < C && Math.abs(lateral - hw) < C;
+      return onArm || onCorner;
     });
     if (!onRoad) {
       car.failed     = true;
@@ -1327,7 +1331,7 @@ export class RoundaboutGame3arm {
       if (npc.state === 'despawned') continue;
       const dx = car.pos.x - npc.mesh.position.x;
       const dz = car.pos.z - npc.mesh.position.z;
-      if (dx * dx + dz * dz < 3.5 * 3.5) {
+      if (dx * dx + dz * dz < 1.6 * 1.6) {
         car.failed    = true;
         car.failReason = 'You crashed into traffic. Stay focused next time!';
         return;

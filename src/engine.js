@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 const BASE = import.meta.env.BASE_URL;
+let _firstPlay4arm = true;
 
 // ─── World constants ──────────────────────────────────────────────────────────
 const LANE_W  = 3.5;   // one lane width
@@ -163,8 +164,6 @@ export class RoundaboutGame {
     this._previewCfg          = { r: 60, h: 32, spd: 0.02, fov: 36 };
     this._stationaryTimer     = 0;      // how long player has been stopped
     this._hornCooldown        = 0;      // time until next beep is allowed
-    this._assignMission();
-
     this._onKeyDown = e => {
       if (this._preview) return;
       this.keys.add(e.code);
@@ -1012,6 +1011,7 @@ export class RoundaboutGame {
     }
   }
 
+
   _spawnNPC(npc) {
     const TWO_PI = Math.PI * 2;
     // Pick random entry arm, then a different exit arm from all 4
@@ -1644,8 +1644,13 @@ export class RoundaboutGame {
   // ── Mission assignment ─────────────────────────────────────────────────────
   _assignMission() {
     let idx;
-    do { idx = Math.floor(Math.random() * EXITS.length); }
-    while (EXITS.length > 1 && idx === this._lastExitIndex);
+    if (_firstPlay4arm) {
+      idx = 0;
+      _firstPlay4arm = false;
+    } else {
+      do { idx = Math.floor(Math.random() * EXITS.length); }
+      while (EXITS.length > 1 && idx === this._lastExitIndex);
+    }
     this._lastExitIndex = idx;
 
     const exit = EXITS[idx];
@@ -1665,6 +1670,7 @@ export class RoundaboutGame {
 
   // ── Exit preview and begin gameplay ────────────────────────────────────────
   startGame() {
+    this._assignMission();
     this._preview = false;
     // Re-sync camera lag to current car position so it doesn't snap
     const { pos, heading } = this.car;
@@ -1758,15 +1764,22 @@ export class RoundaboutGame {
     // outer lane edge (|x|=7) the ring boundary is ~1.1 units inside RB_OUT,
     // so an 8-unit overlap gives plenty of margin with no gameplay side-effects.
     const ARM_OVERLAP = 1.5;
+    const C  = LANE_W;         // corner buffer half-size (3.5 units)
+    const hw = ROAD_W / 2;     // arm half-width (7)
     // Generalised exit-arm projection (works for any fixed theta)
     const exitRadial  = car.pos.x * Math.sin(this._exitTheta) + car.pos.z * (-Math.cos(this._exitTheta));
     const exitLateral = Math.abs(car.pos.x * Math.cos(this._exitTheta) + car.pos.z * Math.sin(this._exitTheta));
     const onRoad = (
       (dist > RB_IN && dist < RB_OUT) ||
-      (Math.abs(car.pos.x) < ROAD_W / 2 && car.pos.z >  RB_OUT - ARM_OVERLAP && car.pos.z <  RB_OUT + ROAD_L) || // S
-      (Math.abs(car.pos.x) < ROAD_W / 2 && car.pos.z < -RB_OUT + ARM_OVERLAP && car.pos.z > -(RB_OUT + ROAD_L)) || // N
-      (Math.abs(car.pos.z) < ROAD_W / 2 && car.pos.x >  RB_OUT - ARM_OVERLAP && car.pos.x <  RB_OUT + ROAD_L) || // E
-      (Math.abs(car.pos.z) < ROAD_W / 2 && car.pos.x < -RB_OUT + ARM_OVERLAP && car.pos.x > -(RB_OUT + ROAD_L))  // W
+      (Math.abs(car.pos.x) < hw && car.pos.z >  RB_OUT - ARM_OVERLAP && car.pos.z <  RB_OUT + ROAD_L) || // S arm
+      (Math.abs(car.pos.x) < hw && car.pos.z < -RB_OUT + ARM_OVERLAP && car.pos.z > -(RB_OUT + ROAD_L)) || // N arm
+      (Math.abs(car.pos.z) < hw && car.pos.x >  RB_OUT - ARM_OVERLAP && car.pos.x <  RB_OUT + ROAD_L) || // E arm
+      (Math.abs(car.pos.z) < hw && car.pos.x < -RB_OUT + ARM_OVERLAP && car.pos.x > -(RB_OUT + ROAD_L)) || // W arm
+      // Corner buffers: 2 per arm where the arm side edge meets the ring outer boundary
+      (Math.abs(Math.abs(car.pos.x) - hw) < C && car.pos.z >  RB_OUT - C && car.pos.z <  RB_OUT + C) || // S corners
+      (Math.abs(Math.abs(car.pos.x) - hw) < C && car.pos.z < -(RB_OUT - C) && car.pos.z > -(RB_OUT + C)) || // N corners
+      (Math.abs(Math.abs(car.pos.z) - hw) < C && car.pos.x >  RB_OUT - C && car.pos.x <  RB_OUT + C) || // E corners
+      (Math.abs(Math.abs(car.pos.z) - hw) < C && car.pos.x < -(RB_OUT - C) && car.pos.x > -(RB_OUT + C))  // W corners
     );
     if (!onRoad) {
       car.failed    = true;
@@ -1779,7 +1792,7 @@ export class RoundaboutGame {
       if (npc.state === 'despawned') continue;
       const dx = car.pos.x - npc.mesh.position.x;
       const dz = car.pos.z - npc.mesh.position.z;
-      if (dx * dx + dz * dz < 3.5 * 3.5) {
+      if (dx * dx + dz * dz < 1.6 * 1.6) {
         car.failed    = true;
         car.failReason = 'You crashed into traffic. Stay focused next time!';
         return;
